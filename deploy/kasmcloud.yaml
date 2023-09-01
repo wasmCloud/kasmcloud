@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: kasmcloud-host
+  name: kasmcloud-host
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kasmcloud-host
+  template:
+    metadata:
+      labels:
+        app: kasmcloud-host
+    spec:
+      containers:
+      - command:
+        - "/usr/local/bin/kasmcloud"
+        image: ghcr.io/iceber/kasmcloud/host:v0.0.1
+        name: host
+        env:
+        - name: KASMCLOUD_NATS_URL
+          value: "nats://kasmcloud-nats.default:4222"

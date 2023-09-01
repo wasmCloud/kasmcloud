@@ -1,0 +1,43 @@
+apiVersion: kasmcloud.io/v1alpha1
+kind: Provider
+metadata:
+  name: httpserver
+spec:
+  link: test
+  #  Image pull is faster, you can use `wasmcloud.azurecr.io/httpserver:0.17.0`
+  image: ghcr.io/iceber/wasmcloud/httpserver:0.17.0-index
+  host: wasmcloud-local
+---
+apiVersion: kasmcloud.io/v1alpha1
+kind: Actor
+metadata:
+  name: echo
+spec:
+  image: wasmcloud.azurecr.io/echo:0.3.8
+  replica: 10
+  host: wasmcloud-local
+---
+apiVersion: kasmcloud.io/v1alpha1
+kind: Link
+metadata:
+  name: test
+spec:
+  contract_id: "wasmcloud:httpserver"
+  actor:
+    name: echo
+  provider:
+    name: httpserver
+  values:
+    address: "0.0.0.0:8080"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kasmcloud-echo-http-server
+spec:
+  ports:
+  - name: http
+    port: 8080
+    protocol: TCP
+  selector:
+    app: kasmcloud-host

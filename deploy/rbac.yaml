@@ -1,0 +1,24 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kasmcloud-host
+rules:
+- apiGroups:
+  - 'kasmcloud.io'
+  resources:
+  - '*'
+  verbs:
+  - '*'
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kasmcloud-host
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kasmcloud-host
+subjects:
+- kind: ServiceAccount
+  name: default
+---
