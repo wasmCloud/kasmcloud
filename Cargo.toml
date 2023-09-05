@@ -1,0 +1,103 @@
+[package]
+name = "kasmcloud"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[workspace.package]
+authors = ["The KasmCloud Team", "Iceber Gu"]
+categories = ["wasm"]
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/iceber/kasmcloud"
+
+[dependencies]
+anyhow = { workspace = true }
+async-nats = { workspace = true }
+async-trait = { workspace = true }
+base64 = { workspace = true }
+bytes = { workspace = true }
+futures = { workspace = true }
+http = { workspace = true }
+k8s-openapi = { workspace = true }
+kube = { workspace = true }
+nkeys = { workspace = true }
+opentelemetry = { workspace = true }
+rmp-serde = { workspace = true }
+schemars = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+serde_bytes = { workspace = true }
+thiserror =  { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-opentelemetry = { workspace = true }
+ulid = { workspace = true }
+url = { workspace = true }
+uuid = { workspace = true }
+wascap = { workspace = true }
+wasmcloud-compat = { workspace = true }
+wasmcloud-control-interface = { workspace = true }
+wasmcloud-core = { workspace = true }
+wasmcloud-host = { workspace = true }
+wasmcloud-runtime = { workspace = true }
+wasmcloud-tracing = { workspace = true }
+kasmcloud-apis = { workspace = true }
+kasmcloud-host = { workspace = true }
+config = "0.13.3"
+serde_derive = "1.0.188"
+clap = { version = "4.4.2", features = [
+    "color",
+    "derive",
+    "env",
+    "error-context",
+    "help",
+    "std",
+    "suggestions",
+    "usage",
+] }
+
+
+[workspace]
+members = []
+
+[workspace.dependencies]
+anyhow = "1.0.75"
+async-nats = "0.31.0"
+async-trait = "0.1.73"
+base64 = "0.21.3"
+bytes = "1.4.0"
+futures = "0.3.28"
+http = "0.2.9"
+k8s-openapi = { version = "0.19.0", features = ["schemars", "v1_27"]}
+kube = { version = "0.85.0", features = ["gzip", "jsonpatch", "runtime", "derive", "unstable-runtime"] }
+nkeys = "0.3.2"
+opentelemetry = "0.20.0"
+rmp-serde = "1.1.2"
+schemars = "0.8.13"
+serde = "1.0.188"
+serde_json = "1.0.105"
+serde_yaml = "0.9.25"
+thiserror = "1.0.47"
+tokio = { version = "1.32.0", features = ["full"] }
+tracing = "0.1.37"
+tracing-opentelemetry = "0.21.0"
+ulid = "1.0.1"
+url = "2.4.1"
+uuid = "1.4.1"
+wascap = "0.11.1"
+#wasmcloud-compat = { git = "https://github.com/wasmcloud/wasmCloud",  version = "0.1.0" }
+#wasmcloud-core = { git = "https://github.com/wasmcloud/wasmCloud", version = "0.1.0" }
+#wasmcloud-host = { git = "https://github.com/wasmcloud/wasmCloud", version = "0.1.0" }
+#wasmcloud-runtime = { git = "https://github.com/wasmcloud/wasmCloud", version = "0.1.0" }
+wasmcloud-compat = { path = "../wasmCloud/crates/compat" }
+wasmcloud-core = { path = "../wasmCloud/crates/core" }
+wasmcloud-host = { path = "../wasmCloud/crates/host" }
+wasmcloud-runtime = { path = "../wasmCloud/crates/runtime" }
+wasmcloud-tracing = { path = "../wasmCloud/crates/tracing" }
+wasmcloud-control-interface = "0.28.1"
+kasmcloud-apis = { path = "./crates/apis" }
+kasmcloud-host = { path = "./crates/host" }
+serde_bytes = "0.11.12"

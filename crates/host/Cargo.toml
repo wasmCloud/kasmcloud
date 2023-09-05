@@ -1,0 +1,38 @@
+[package]
+name = "kasmcloud-host"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = { workspace = true }
+async-nats = { workspace = true }
+async-trait = { workspace = true }
+base64 = { workspace = true }
+bytes = { workspace = true }
+futures = { workspace = true }
+http = { workspace = true }
+k8s-openapi = { workspace = true }
+nkeys = { workspace = true }
+opentelemetry = { workspace = true }
+rmp-serde = { workspace = true }
+schemars = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+serde_bytes = { workspace = true }
+thiserror =  { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-opentelemetry = { workspace = true }
+ulid = { workspace = true }
+url = { workspace = true }
+uuid = { workspace = true }
+wascap = { workspace = true }
+wasmcloud-compat = { workspace = true }
+wasmcloud-control-interface = { workspace = true }
+wasmcloud-core = { workspace = true }
+wasmcloud-host = { workspace = true }
+wasmcloud-runtime = { workspace = true }
+wasmcloud-tracing = { workspace = true }
