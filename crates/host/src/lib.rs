@@ -27,7 +27,7 @@ use uuid::Uuid;
 use wascap::jwt;
 use wasmcloud_control_interface::LinkDefinition;
 use wasmcloud_core::{chunking::ChunkEndpoint, HostData, OtelConfig, WasmCloudEntity};
-use wasmcloud_host::policy::RequestTarget;
+use wasmcloud_host::{policy::RequestTarget, RegistryConfig};
 use wasmcloud_runtime::{ActorInstancePool, Runtime};
 
 use handler::Handler;
@@ -117,7 +117,7 @@ pub struct Host {
     providers: RwLock<HashMap<String, provider::Provider>>,
 
     aliases: Arc<RwLock<HashMap<String, WasmCloudEntity>>>,
-    registry_settings: RwLock<HashMap<String, wasmcloud_host::registry::Settings>>,
+    registry_settings: RwLock<HashMap<String, RegistryConfig>>,
 }
 
 impl Host {

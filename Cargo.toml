@@ -88,15 +88,11 @@ ulid = "1.0.1"
 url = "2.4.1"
 uuid = "1.4.1"
 wascap = "0.11.1"
-#wasmcloud-compat = { git = "https://github.com/wasmcloud/wasmCloud",  version = "0.1.0" }
-#wasmcloud-core = { git = "https://github.com/wasmcloud/wasmCloud", version = "0.1.0" }
-#wasmcloud-host = { git = "https://github.com/wasmcloud/wasmCloud", version = "0.1.0" }
-#wasmcloud-runtime = { git = "https://github.com/wasmcloud/wasmCloud", version = "0.1.0" }
-wasmcloud-compat = { path = "../wasmCloud/crates/compat" }
-wasmcloud-core = { path = "../wasmCloud/crates/core" }
-wasmcloud-host = { path = "../wasmCloud/crates/host" }
-wasmcloud-runtime = { path = "../wasmCloud/crates/runtime" }
-wasmcloud-tracing = { path = "../wasmCloud/crates/tracing" }
+wasmcloud-compat = { git = "https://github.com/wasmcloud/wasmCloud", rev = "cdbc2fc99ef7a02efdc0fe4b8884247c20b2f314" }
+wasmcloud-core = { git = "https://github.com/wasmcloud/wasmCloud", rev = "cdbc2fc99ef7a02efdc0fe4b8884247c20b2f314" }
+wasmcloud-host = { git = "https://github.com/wasmcloud/wasmCloud", rev = "cdbc2fc99ef7a02efdc0fe4b8884247c20b2f314" }
+wasmcloud-runtime = { git = "https://github.com/wasmcloud/wasmCloud", rev = "cdbc2fc99ef7a02efdc0fe4b8884247c20b2f314" }
+wasmcloud-tracing = { git = "https://github.com/wasmcloud/wasmCloud", rev = "cdbc2fc99ef7a02efdc0fe4b8884247c20b2f314" }
 wasmcloud-control-interface = "0.28.1"
 kasmcloud-apis = { path = "./crates/apis" }
 kasmcloud-host = { path = "./crates/host" }

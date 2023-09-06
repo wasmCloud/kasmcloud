@@ -4,10 +4,10 @@ use core::pin::Pin;
 use core::time::Duration;
 use std::collections::HashMap;
 use std::io::Cursor;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use anyhow::{anyhow, bail, ensure, Context as _};
-use async_nats::Request;
 use async_trait::async_trait;
 use futures::{stream, FutureExt, Stream};
 use nkeys::KeyPair;
@@ -19,11 +19,12 @@ use tracing::{debug, error, info, instrument, trace, warn};
 use wascap::jwt;
 use wasmcloud_core::chunking::{ChunkEndpoint, CHUNK_RPC_EXTRA_TIME, CHUNK_THRESHOLD_BYTES};
 use wasmcloud_core::{Invocation, InvocationResponse, WasmCloudEntity};
+use wasmcloud_runtime::capability::logging::logging;
 use wasmcloud_runtime::capability::{
     blobstore, messaging, ActorIdentifier, Blobstore, Bus, KeyValueAtomic, KeyValueReadWrite,
-    Messaging, TargetEntity, TargetInterface,
+    Logging, Messaging, TargetEntity, TargetInterface,
 };
-use wasmcloud_tracing::context::{attach_span_context, OtelHeaderInjector};
+use wasmcloud_tracing::context::TraceContextInjector;
 
 #[derive(Clone, Debug)]
 pub struct Handler {
@@ -36,8 +37,8 @@ pub struct Handler {
     // package -> target -> entity
     pub links: Arc<RwLock<HashMap<String, HashMap<String, WasmCloudEntity>>>>,
     pub targets: Arc<RwLock<HashMap<TargetInterface, TargetEntity>>>,
-    pub chunk_endpoint: ChunkEndpoint,
     pub aliases: Arc<RwLock<HashMap<String, WasmCloudEntity>>>,
+    pub chunk_endpoint: ChunkEndpoint,
 }
 
 impl Handler {
@@ -56,6 +57,8 @@ impl Handler {
             .context("failed to parse operation")?;
         let inv_target = resolve_target(target, links.get(package), &aliases).await?;
         let needs_chunking = request.len() > CHUNK_THRESHOLD_BYTES;
+        let injector = TraceContextInjector::default_with_span();
+        let headers = injector_to_headers(&injector);
         let mut invocation = Invocation::new(
             &self.cluster_key,
             &self.host_key,
@@ -63,7 +66,7 @@ impl Handler {
             inv_target,
             operation,
             request,
-            OtelHeaderInjector::default_with_span().into(),
+            injector.into(),
         )?;
 
         // Validate that the actor has the capability to call the target
@@ -94,7 +97,10 @@ impl Handler {
         };
 
         let timeout = needs_chunking.then_some(CHUNK_RPC_EXTRA_TIME); // TODO: add rpc_nats timeout
-        let request = Request::new().payload(payload.into()).timeout(timeout);
+        let request = async_nats::Request::new()
+            .payload(payload.into())
+            .timeout(timeout)
+            .headers(headers); // TODO: remove headers once all providers are built off the new SDK, which parses the trace context in the invocation
         let res = self
             .nats
             .send_request(topic, request)
@@ -141,6 +147,29 @@ impl Handler {
             .await
             .context("failed to call target entity")?
             .map_err(|err| anyhow!(err).context("call failed"))
+    }
+}
+
+/// Decode provider response accounting for the custom wasmbus-rpc encoding format
+fn decode_provider_response<T>(buf: impl AsRef<[u8]>) -> anyhow::Result<T>
+where
+    for<'a> T: Deserialize<'a>,
+{
+    let buf = buf.as_ref();
+    match buf.split_first() {
+        Some((0x7f, _)) => bail!("CBOR responses are not supported"),
+        Some((0xc1, buf)) => rmp_serde::from_slice(buf),
+        _ => rmp_serde::from_slice(buf),
+    }
+    .context("failed to decode response")
+}
+
+fn decode_empty_provider_response(buf: impl AsRef<[u8]>) -> anyhow::Result<()> {
+    let buf = buf.as_ref();
+    if buf.is_empty() {
+        Ok(())
+    } else {
+        decode_provider_response(buf)
     }
 }
 
@@ -477,6 +506,8 @@ impl Bus for Handler {
                     .await
                     .map_err(|e| e.to_string())?;
                 let needs_chunking = request.len() > CHUNK_THRESHOLD_BYTES;
+                let injector = TraceContextInjector::default_with_span();
+                let headers = injector_to_headers(&injector);
                 let mut invocation = Invocation::new(
                     &cluster_key,
                     &host_key,
@@ -484,7 +515,7 @@ impl Bus for Handler {
                     inv_target,
                     operation,
                     request,
-                    OtelHeaderInjector::default_with_span().into(),
+                    injector.into(),
                 )
                 .map_err(|e| e.to_string())?;
 
@@ -516,7 +547,10 @@ impl Bus for Handler {
                 };
 
                 let timeout = needs_chunking.then_some(CHUNK_RPC_EXTRA_TIME); // TODO: add rpc_nats timeout
-                let request = Request::new().payload(payload.into()).timeout(timeout);
+                let request = async_nats::Request::new()
+                    .payload(payload.into())
+                    .timeout(timeout)
+                    .headers(headers); // TODO: remove headers once all providers are built off the new SDK, which parses the trace context in the invocation
                 let res = nats
                     .send_request(topic, request)
                     .await
@@ -714,6 +748,76 @@ impl KeyValueReadWrite for Handler {
 }
 
 #[async_trait]
+impl Logging for Handler {
+    #[instrument(skip_all)]
+    async fn log(
+        &self,
+        level: logging::Level,
+        context: String,
+        message: String,
+    ) -> anyhow::Result<()> {
+        ensure_actor_capability(self.claims.metadata.as_ref(), wascap::caps::LOGGING)?;
+        match level {
+            logging::Level::Trace => {
+                tracing::event!(
+                    tracing::Level::TRACE,
+                    actor_id = self.claims.subject,
+                    ?level,
+                    context,
+                    "{message}"
+                );
+            }
+            logging::Level::Debug => {
+                tracing::event!(
+                    tracing::Level::DEBUG,
+                    actor_id = self.claims.subject,
+                    ?level,
+                    context,
+                    "{message}"
+                );
+            }
+            logging::Level::Info => {
+                tracing::event!(
+                    tracing::Level::INFO,
+                    actor_id = self.claims.subject,
+                    ?level,
+                    context,
+                    "{message}"
+                );
+            }
+            logging::Level::Warn => {
+                tracing::event!(
+                    tracing::Level::WARN,
+                    actor_id = self.claims.subject,
+                    ?level,
+                    context,
+                    "{message}"
+                );
+            }
+            logging::Level::Error => {
+                tracing::event!(
+                    tracing::Level::ERROR,
+                    actor_id = self.claims.subject,
+                    ?level,
+                    context,
+                    "{message}"
+                );
+            }
+            logging::Level::Critical => {
+                tracing::event!(
+                    tracing::Level::ERROR,
+                    actor_id = self.claims.subject,
+                    ?level,
+                    context,
+                    "{message}"
+                );
+            }
+        };
+        Ok(())
+    }
+}
+
+#[async_trait]
 impl Messaging for Handler {
     #[instrument(skip(self, body))]
     async fn request(
@@ -794,62 +898,6 @@ impl Messaging for Handler {
     }
 }
 
-pub fn ensure_actor_capability(
-    claims_metadata: Option<&jwt::Actor>,
-    contract_id: impl AsRef<str>,
-) -> anyhow::Result<()> {
-    let contract_id: &str = contract_id.as_ref();
-    match claims_metadata {
-        // [ADR-0006](https://github.com/wasmCloud/wasmCloud/blob/main/adr/0006-actor-to-actor.md)
-        // Allow actor to actor calls by default
-        _ if contract_id.is_empty() => {}
-        Some(jwt::Actor {
-            caps: Some(ref caps),
-            ..
-        }) => {
-            ensure!(
-                caps.iter().any(|cap| cap == contract_id),
-                "actor does not have capability claim `{contract_id}`"
-            );
-        }
-        Some(_) | None => bail!("actor missing capability claims, denying invocation"),
-    }
-    Ok(())
-}
-
-#[cfg(unix)]
-fn socket_pair() -> anyhow::Result<(tokio::net::UnixStream, tokio::net::UnixStream)> {
-    tokio::net::UnixStream::pair().context("failed to create an unnamed unix socket pair")
-}
-
-#[cfg(windows)]
-fn socket_pair() -> anyhow::Result<(tokio::io::DuplexStream, tokio::io::DuplexStream)> {
-    Ok(tokio::io::duplex(8196))
-}
-
-/// Decode provider response accounting for the custom wasmbus-rpc encoding format
-fn decode_provider_response<T>(buf: impl AsRef<[u8]>) -> anyhow::Result<T>
-where
-    for<'a> T: Deserialize<'a>,
-{
-    let buf = buf.as_ref();
-    match buf.split_first() {
-        Some((0x7f, _)) => bail!("CBOR responses are not supported"),
-        Some((0xc1, buf)) => rmp_serde::from_slice(buf),
-        _ => rmp_serde::from_slice(buf),
-    }
-    .context("failed to decode response")
-}
-
-fn decode_empty_provider_response(buf: impl AsRef<[u8]>) -> anyhow::Result<()> {
-    let buf = buf.as_ref();
-    if buf.is_empty() {
-        Ok(())
-    } else {
-        decode_provider_response(buf)
-    }
-}
-
 #[instrument]
 async fn resolve_target(
     target: Option<&TargetEntity>,
@@ -879,4 +927,51 @@ async fn resolve_target(
             .clone(),
     };
     Ok(target)
+}
+
+fn injector_to_headers(injector: &TraceContextInjector) -> async_nats::header::HeaderMap {
+    injector
+        .iter()
+        .filter_map(|(k, v)| {
+            // There's not really anything we can do about headers that don't parse
+            let name = async_nats::header::HeaderName::from_str(k.as_str()).ok()?;
+            let value = async_nats::header::HeaderValue::from_str(v.as_str()).ok()?;
+            Some((name, value))
+        })
+        .collect()
+}
+
+/// Ensure actor has the capability claim to send or receive this invocation. This
+/// should be called whenever an actor is about to send or receive an invocation.
+pub fn ensure_actor_capability(
+    claims_metadata: Option<&jwt::Actor>,
+    contract_id: impl AsRef<str>,
+) -> anyhow::Result<()> {
+    let contract_id = contract_id.as_ref();
+    match claims_metadata {
+        // [ADR-0006](https://github.com/wasmCloud/wasmCloud/blob/main/adr/0006-actor-to-actor.md)
+        // Allow actor to actor calls by default
+        _ if contract_id.is_empty() => {}
+        Some(jwt::Actor {
+            caps: Some(ref caps),
+            ..
+        }) => {
+            ensure!(
+                caps.iter().any(|cap| cap == contract_id),
+                "actor does not have capability claim `{contract_id}`"
+            );
+        }
+        Some(_) | None => bail!("actor missing capability claims, denying invocation"),
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn socket_pair() -> anyhow::Result<(tokio::net::UnixStream, tokio::net::UnixStream)> {
+    tokio::net::UnixStream::pair().context("failed to create an unnamed unix socket pair")
+}
+
+#[cfg(windows)]
+fn socket_pair() -> anyhow::Result<(tokio::io::DuplexStream, tokio::io::DuplexStream)> {
+    Ok(tokio::io::duplex(8196))
 }
