@@ -2,6 +2,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct Claims {
     pub issuer: String,
     pub subject: String,

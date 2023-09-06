@@ -13,15 +13,16 @@ use kube::CustomResource;
     status = "ActorStatus"
 )]
 #[kube(
-    printcolumn = r#"{"name":"Desc", "jsonPath": ".status.descriptive_name", "type": "string"}"#
+    printcolumn = r#"{"name":"Desc", "jsonPath": ".status.descriptiveName", "type": "string"}"#
 )]
-#[kube(printcolumn = r#"{"name":"PublicKey", "jsonPath": ".status.public_key", "type": "string"}"#)]
+#[kube(printcolumn = r#"{"name":"PublicKey", "jsonPath": ".status.publicKey", "type": "string"}"#)]
 #[kube(printcolumn = r#"{"name":"Replica", "jsonPath": ".spec.replica", "type": "integer"}"#)]
 #[kube(
-    printcolumn = r#"{"name":"Caps", "jsonPath": ".status.capability_provider", "type": "string"}"#
+    printcolumn = r#"{"name":"Caps", "jsonPath": ".status.capabilityProvider", "type": "string"}"#
 )]
 #[kube(printcolumn = r#"{"name":"Image", "jsonPath": ".spec.image", "type": "string"}"#)]
 #[kube(category = "kasmcloud")]
+#[serde(rename_all = "camelCase")]
 pub struct ActorSpec {
     pub host: String,
     pub image: String,
@@ -29,6 +30,7 @@ pub struct ActorSpec {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct ActorStatus {
     pub public_key: String,
     pub descriptive_name: Option<String>,

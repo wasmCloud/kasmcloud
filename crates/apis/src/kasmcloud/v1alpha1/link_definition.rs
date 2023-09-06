@@ -15,11 +15,12 @@ use kube::CustomResource;
     status = "LinkStatus"
 )]
 #[kube(category = "kasmcloud")]
-#[kube(printcolumn = r#"{"name":"ActorKey", "jsonPath": ".status.actor_key", "type": "string"}"#)]
+#[kube(printcolumn = r#"{"name":"ActorKey", "jsonPath": ".status.actorKey", "type": "string"}"#)]
 #[kube(
-    printcolumn = r#"{"name":"ProviderKey", "jsonPath": ".status.provider_key", "type": "string"}"#
+    printcolumn = r#"{"name":"ProviderKey", "jsonPath": ".status.providerKey", "type": "string"}"#
 )]
-#[kube(printcolumn = r#"{"name":"ControctId", "jsonPath": ".spec.contract_id", "type": "string"}"#)]
+#[kube(printcolumn = r#"{"name":"ControctId", "jsonPath": ".spec.contractId", "type": "string"}"#)]
+#[serde(rename_all = "camelCase")]
 pub struct LinkSpec {
     pub provider: Source,
     pub actor: Source,
@@ -28,6 +29,7 @@ pub struct LinkSpec {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct LinkStatus {
     pub provider_key: String,
     pub actor_key: String,
@@ -37,6 +39,7 @@ pub struct LinkStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct Source {
     pub key: Option<String>,
     pub name: Option<String>,

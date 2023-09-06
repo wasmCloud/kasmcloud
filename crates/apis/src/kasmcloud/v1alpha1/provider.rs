@@ -12,16 +12,15 @@ use kube::CustomResource;
     namespaced,
     status = "ProviderStatus"
 )]
-#[kube(
-    printcolumn = r#"{"name":"Desc", "jsonPath": ".status.descriptive_name", "type": "string"}"#
-)]
-#[kube(printcolumn = r#"{"name":"PublicKey", "jsonPath": ".status.public_key", "type": "string"}"#)]
+#[kube(printcolumn = r#"{"name":"Desc", "jsonPath": ".status.descriptiveName", "type": "string"}"#)]
+#[kube(printcolumn = r#"{"name":"PublicKey", "jsonPath": ".status.publicKey", "type": "string"}"#)]
 #[kube(printcolumn = r#"{"name":"Link", "jsonPath": ".spec.link", "type": "string"}"#)]
 #[kube(
-    printcolumn = r#"{"name":"ControctId", "jsonPath": ".status.contract_id", "type": "string"}"#
+    printcolumn = r#"{"name":"ControctId", "jsonPath": ".status.contractId", "type": "string"}"#
 )]
 #[kube(printcolumn = r#"{"name":"Image", "jsonPath": ".spec.image", "type": "string"}"#)]
 #[kube(category = "kasmcloud")]
+#[serde(rename_all = "camelCase")]
 pub struct ProviderSpec {
     pub host: String,
     pub image: String,
@@ -29,6 +28,7 @@ pub struct ProviderSpec {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct ProviderStatus {
     pub public_key: String,
     pub contract_id: String,
