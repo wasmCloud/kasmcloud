@@ -1,9 +1,15 @@
-# KasmCloud
-KasmCloud = Kubernetes + WasmCloud
+<div align="center">
+  <h1><code>KasmCloud</code></h1>
 
-**Code will be open source soon**
+<strong>Managing and Running Actors, Providers, and Links in Kubernetes</strong>
+</div>
 
-## Original Design
+## :warning:Warning
+**This is a contributor-led experimental project and is not recommended to run in production at this time.**
+
+With each tag, it works fine, but there may be incompatible changes between tags.
+
+## Design
 
 [Combining WasmCloud with Kubernetes](https://docs.google.com/document/d/16p-9czZ6GT_layiabGE6HTyVpbYSALjoyxXhgIfYW0s/edit#heading=h.ymjg4q1g3smk)
 
