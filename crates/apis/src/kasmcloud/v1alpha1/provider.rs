@@ -1,7 +1,6 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-// use kube::core::{crd::CustomResourceExt, Resource};
 use kube::CustomResource;
 
 #[derive(CustomResource, Clone, Debug, Deserialize, Serialize, JsonSchema)]
@@ -12,13 +11,6 @@ use kube::CustomResource;
     namespaced,
     status = "ProviderStatus"
 )]
-#[kube(printcolumn = r#"{"name":"Desc", "jsonPath": ".status.descriptiveName", "type": "string"}"#)]
-#[kube(printcolumn = r#"{"name":"PublicKey", "jsonPath": ".status.publicKey", "type": "string"}"#)]
-#[kube(printcolumn = r#"{"name":"Link", "jsonPath": ".spec.link", "type": "string"}"#)]
-#[kube(
-    printcolumn = r#"{"name":"ControctId", "jsonPath": ".status.contractId", "type": "string"}"#
-)]
-#[kube(printcolumn = r#"{"name":"Image", "jsonPath": ".spec.image", "type": "string"}"#)]
 #[kube(category = "kasmcloud")]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderSpec {
@@ -41,7 +33,6 @@ pub struct ProviderStatus {
 
     pub architecture_targets: Vec<String>,
 
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub conditions: Vec<k8s_openapi::apimachinery::pkg::apis::meta::v1::Condition>,
     pub instance_id: String,
 }

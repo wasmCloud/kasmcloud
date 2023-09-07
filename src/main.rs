@@ -16,7 +16,7 @@ use kube::core::Resource;
 use kube::runtime::controller::Action;
 use kube::runtime::watcher::Config as WatchConfig;
 use kube::runtime::{finalizer, Controller};
-use kube::{Api, Client, CustomResourceExt, ResourceExt};
+use kube::{Api, Client, ResourceExt};
 use wasmcloud_control_interface::LinkDefinition;
 
 use kasmcloud_apis::kasmcloud::v1alpha1;
@@ -28,9 +28,6 @@ use kasmcloud_host::*;
 struct Args {
     #[clap(long = "config", default_value = "/etc/kasmcloud/config.yaml")]
     config: String,
-
-    #[clap(long = "crd")]
-    crd: bool,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -49,15 +46,6 @@ struct KasmCloudConfig {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Args = Args::parse();
-    if args.crd {
-        println!(
-            "{}\n---\n{}---\n{}",
-            serde_yaml::to_string(&v1alpha1::Actor::crd()).unwrap(),
-            serde_yaml::to_string(&v1alpha1::Provider::crd()).unwrap(),
-            serde_yaml::to_string(&v1alpha1::Link::crd()).unwrap(),
-        );
-        return Ok(());
-    }
 
     let mut builder = Config::builder()
         .set_default("nats_host", "127.0.0.1")?

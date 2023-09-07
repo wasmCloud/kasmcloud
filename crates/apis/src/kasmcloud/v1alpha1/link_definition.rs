@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-// use kube::core::{crd::CustomResourceExt, Resource};
 use kube::CustomResource;
 
 #[derive(CustomResource, Clone, Debug, Deserialize, Serialize, JsonSchema)]
@@ -15,11 +14,6 @@ use kube::CustomResource;
     status = "LinkStatus"
 )]
 #[kube(category = "kasmcloud")]
-#[kube(printcolumn = r#"{"name":"ActorKey", "jsonPath": ".status.actorKey", "type": "string"}"#)]
-#[kube(
-    printcolumn = r#"{"name":"ProviderKey", "jsonPath": ".status.providerKey", "type": "string"}"#
-)]
-#[kube(printcolumn = r#"{"name":"ControctId", "jsonPath": ".spec.contractId", "type": "string"}"#)]
 #[serde(rename_all = "camelCase")]
 pub struct LinkSpec {
     pub provider: Source,

@@ -1,7 +1,6 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-// use kube::core::{crd::CustomResourceExt, Resource};
 use kube::CustomResource;
 
 #[derive(CustomResource, Clone, Debug, Deserialize, Serialize, JsonSchema)]
@@ -12,15 +11,6 @@ use kube::CustomResource;
     namespaced,
     status = "ActorStatus"
 )]
-#[kube(
-    printcolumn = r#"{"name":"Desc", "jsonPath": ".status.descriptiveName", "type": "string"}"#
-)]
-#[kube(printcolumn = r#"{"name":"PublicKey", "jsonPath": ".status.publicKey", "type": "string"}"#)]
-#[kube(printcolumn = r#"{"name":"Replica", "jsonPath": ".spec.replica", "type": "integer"}"#)]
-#[kube(
-    printcolumn = r#"{"name":"Caps", "jsonPath": ".status.capabilityProvider", "type": "string"}"#
-)]
-#[kube(printcolumn = r#"{"name":"Image", "jsonPath": ".spec.image", "type": "string"}"#)]
 #[kube(category = "kasmcloud")]
 #[serde(rename_all = "camelCase")]
 pub struct ActorSpec {
@@ -44,7 +34,6 @@ pub struct ActorStatus {
 
     pub claims: super::Claims,
 
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub conditions: Vec<k8s_openapi::apimachinery::pkg::apis::meta::v1::Condition>,
     pub available_replicas: usize,
 }
