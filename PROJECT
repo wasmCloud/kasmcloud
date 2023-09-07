@@ -17,8 +17,8 @@ resources:
   path: github.com/wasmcloud/kasmcloud/api/v1alpha1
   version: v1alpha1
   webhooks:
-    defaulting: false
-    validation: false
+    defaulting: true
+    validation: true
     webhookVersion: v1
 - api:
     crdVersion: v1
@@ -29,8 +29,8 @@ resources:
   path: github.com/wasmcloud/kasmcloud/api/v1alpha1
   version: v1alpha1
   webhooks:
-    defaulting: false
-    validation: false
+    defaulting: true
+    validation: true
     webhookVersion: v1
 - api:
     crdVersion: v1
@@ -42,6 +42,6 @@ resources:
   version: v1alpha1
   webhooks:
     defaulting: true
-    validation: false
+    validation: true
     webhookVersion: v1
 version: "3"
