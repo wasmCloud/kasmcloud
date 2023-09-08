@@ -25,9 +25,9 @@ import (
 
 // ActorSpec defines the desired state of Actor
 type ActorSpec struct {
-	Host    string `json:"host"`
-	Image   string `json:"image"`
-	Replica uint   `json:"replica"`
+	Host     string `json:"host"`
+	Image    string `json:"image"`
+	Replicas uint   `json:"replicas"`
 }
 
 // ActorStatus defines the observed state of Actor

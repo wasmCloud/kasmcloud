@@ -16,7 +16,7 @@ use kube::CustomResource;
 pub struct ActorSpec {
     pub host: String,
     pub image: String,
-    pub replica: i32,
+    pub replicas: i32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
