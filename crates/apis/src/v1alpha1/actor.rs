@@ -16,7 +16,7 @@ use kube::CustomResource;
 pub struct ActorSpec {
     pub host: String,
     pub image: String,
-    pub replica: usize,
+    pub replica: i32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
@@ -27,13 +27,12 @@ pub struct ActorStatus {
 
     pub caps: Option<Vec<String>>,
     pub capability_provider: Option<Vec<String>>,
-
     pub call_alias: Option<String>,
+    pub claims: super::Claims,
+
     pub version: Option<String>,
     pub reversion: Option<i32>,
 
-    pub claims: super::Claims,
-
     pub conditions: Vec<k8s_openapi::apimachinery::pkg::apis::meta::v1::Condition>,
-    pub available_replicas: usize,
+    pub available_replicas: i32,
 }

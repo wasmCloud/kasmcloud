@@ -32,16 +32,19 @@ type ProviderSpec struct {
 
 // ProviderStatus defines the observed state of Provider
 type ProviderStatus struct {
-	PublicKey           string             `json:"publicKey"`
-	ContractId          string             `json:"contractId"`
-	DescriptiveName     string             `json:"descriptiveName,omitempty"`
-	Vendor              string             `json:"vendor"`
-	Version             string             `json:"version"`
-	Reversion           *int               `json:"reversion,omitempty"`
-	ArchitectureTargets []string           `json:"architectureTargets"`
-	Claims              Claims             `json:"claims"`
-	Conditions          []metav1.Condition `json:"conditions"`
-	InstanceId          string             `json:"instanceId"`
+	PublicKey       string `json:"publicKey"`
+	ContractId      string `json:"contractId"`
+	DescriptiveName string `json:"descriptiveName,omitempty"`
+
+	Claims              Claims   `json:"claims"`
+	ArchitectureTargets []string `json:"architectureTargets"`
+
+	Vendor    string  `json:"vendor"`
+	Version   *string `json:"version,omitempty"`
+	Reversion *int    `json:"reversion,omitempty"`
+
+	Conditions []metav1.Condition `json:"conditions"`
+	InstanceId string             `json:"instanceId"`
 }
 
 // +kubebuilder:object:root=true

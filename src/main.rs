@@ -21,7 +21,7 @@ use kube::runtime::{finalizer, Controller};
 use kube::{Api, Client, ResourceExt};
 use wasmcloud_control_interface::LinkDefinition;
 
-use kasmcloud_apis::kasmcloud::v1alpha1;
+use kasmcloud_apis::v1alpha1;
 use kasmcloud_host::*;
 
 #[derive(Debug, Parser)]
@@ -200,7 +200,7 @@ async fn reconcile_actor(actor: Arc<v1alpha1::Actor>, ctx: Arc<Ctx>) -> Result<A
         .replica_actor(
             actor.name_any(),
             actor.spec.image.clone(),
-            actor.spec.replica,
+            actor.spec.replica as usize,
         )
         .await
     {
@@ -314,10 +314,12 @@ async fn add_link(link: Arc<v1alpha1::Link>, ctx: Arc<Ctx>) -> Result<Action, Er
             ld.provider_id = status.provider_key.clone();
         }
     } else {
-        if let Some(key) = spec.actor.key.clone() {
-            ld.actor_id = key
-        } else if let Some(name) = spec.actor.name.clone() {
-            match ctx.actors.get(&name).await {
+        let key = &spec.actor.key;
+        let name = &spec.actor.name;
+        if !key.is_empty() {
+            ld.actor_id = key.clone();
+        } else if !name.is_empty() {
+            match ctx.actors.get(name).await {
                 Ok(actor) => {
                     if let Some(status) = actor.status {
                         if status.public_key == "" {
@@ -336,12 +338,16 @@ async fn add_link(link: Arc<v1alpha1::Link>, ctx: Arc<Ctx>) -> Result<Action, Er
                     return Ok(Action::requeue(Duration::from_secs(60)));
                 }
             }
+        } else {
+            // TODO(Iceber): Add log or error
         };
 
-        if let Some(key) = spec.provider.key.clone() {
-            ld.provider_id = key
-        } else if let Some(name) = spec.provider.name.clone() {
-            match ctx.providers.get(&name).await {
+        let key = &spec.provider.key;
+        let name = &spec.provider.name;
+        if !key.is_empty() {
+            ld.provider_id = key.clone();
+        } else if !name.is_empty() {
+            match ctx.providers.get(name).await {
                 Ok(provider) => {
                     if let Some(status) = provider.status {
                         if status.public_key == "" {
@@ -360,6 +366,8 @@ async fn add_link(link: Arc<v1alpha1::Link>, ctx: Arc<Ctx>) -> Result<Action, Er
                     return Ok(Action::requeue(Duration::from_secs(60)));
                 }
             }
+        } else {
+            // TODO(Iceber): Add log or error
         };
     }
 
