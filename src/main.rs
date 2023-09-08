@@ -3,6 +3,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::Context as _;
+use chrono::{DateTime, LocalResult, TimeZone, Utc};
 use clap::Parser;
 use config::{Config, Environment, File};
 use futures::{future::ready, join, StreamExt};
@@ -11,6 +12,7 @@ use serde_derive::Deserialize;
 use thiserror::Error;
 use url::Url;
 
+use k8s_openapi::apimachinery::pkg::apis::meta::v1 as metav1;
 use kube::api::{Patch, PatchParams};
 use kube::core::Resource;
 use kube::runtime::controller::Action;
@@ -198,19 +200,43 @@ async fn reconcile_actor(actor: Arc<v1alpha1::Actor>, ctx: Arc<Ctx>) -> Result<A
         .replica_actor(
             actor.name_any(),
             actor.spec.image.clone(),
-            actor.spec.replica.clone(),
+            actor.spec.replica,
         )
         .await
     {
         Ok(claims) => {
             let public_key = claims.subject.clone();
-            let c = v1alpha1::Claims {
+            let issued_at =
+                if let LocalResult::Single(dt) = Utc.timestamp_opt(claims.issued_at as i64, 0) {
+                    dt
+                } else {
+                    DateTime::<Utc>::MIN_UTC
+                };
+            let mut c = v1alpha1::Claims {
                 issuer: claims.issuer.clone(),
                 subject: claims.subject.clone(),
-                not_before: claims.not_before.clone(),
-                issued_at: claims.issued_at.clone(),
-                expires: claims.expires.clone(),
+                issued_at: metav1::Time(issued_at),
+                not_before: None,
+                expires: None,
             };
+            if let Some(t) = claims.not_before {
+                c.not_before = Some(metav1::Time(
+                    if let LocalResult::Single(dt) = Utc.timestamp_opt(t as i64, 0) {
+                        dt
+                    } else {
+                        DateTime::<Utc>::MIN_UTC
+                    },
+                ))
+            }
+            if let Some(t) = claims.expires {
+                c.expires = Some(metav1::Time(
+                    if let LocalResult::Single(dt) = Utc.timestamp_opt(t as i64, 0) {
+                        dt
+                    } else {
+                        DateTime::<Utc>::MIN_UTC
+                    },
+                ))
+            }
 
             let mut status = v1alpha1::ActorStatus {
                 public_key,
@@ -390,13 +416,37 @@ async fn reconcile_provider(g: Arc<v1alpha1::Provider>, ctx: Arc<Ctx>) -> Result
     {
         Ok(claims) => {
             let public_key = claims.subject.clone();
-            let c = v1alpha1::Claims {
+            let issued_at =
+                if let LocalResult::Single(dt) = Utc.timestamp_opt(claims.issued_at as i64, 0) {
+                    dt
+                } else {
+                    DateTime::<Utc>::MIN_UTC
+                };
+            let mut c = v1alpha1::Claims {
                 issuer: claims.issuer.clone(),
                 subject: claims.subject.clone(),
-                not_before: claims.not_before.clone(),
-                issued_at: claims.issued_at.clone(),
-                expires: claims.expires.clone(),
+                issued_at: metav1::Time(issued_at),
+                not_before: None,
+                expires: None,
             };
+            if let Some(t) = claims.not_before {
+                c.not_before = Some(metav1::Time(
+                    if let LocalResult::Single(dt) = Utc.timestamp_opt(t as i64, 0) {
+                        dt
+                    } else {
+                        DateTime::<Utc>::MIN_UTC
+                    },
+                ))
+            }
+            if let Some(t) = claims.expires {
+                c.expires = Some(metav1::Time(
+                    if let LocalResult::Single(dt) = Utc.timestamp_opt(t as i64, 0) {
+                        dt
+                    } else {
+                        DateTime::<Utc>::MIN_UTC
+                    },
+                ))
+            }
 
             let mut status = v1alpha1::ProviderStatus {
                 public_key,
