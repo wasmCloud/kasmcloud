@@ -200,7 +200,7 @@ async fn reconcile_actor(actor: Arc<v1alpha1::Actor>, ctx: Arc<Ctx>) -> Result<A
         .replica_actor(
             actor.name_any(),
             actor.spec.image.clone(),
-            actor.spec.replica as usize,
+            actor.spec.replicas as usize,
         )
         .await
     {
@@ -248,7 +248,7 @@ async fn reconcile_actor(actor: Arc<v1alpha1::Actor>, ctx: Arc<Ctx>) -> Result<A
                 version: None,
                 reversion: None,
                 conditions: Vec::new(),
-                available_replicas: actor.spec.replica,
+                available_replicas: actor.spec.replicas,
             };
             if let Some(meta) = claims.metadata {
                 status.descriptive_name = meta.name;
