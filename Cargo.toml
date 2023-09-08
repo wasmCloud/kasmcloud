@@ -58,6 +58,7 @@ clap = { version = "4.4.2", features = [
     "suggestions",
     "usage",
 ] }
+chrono = { workspace = true }
 
 
 [workspace]
@@ -97,3 +98,4 @@ wasmcloud-control-interface = "0.28.1"
 kasmcloud-apis = { path = "./crates/apis" }
 kasmcloud-host = { path = "./crates/host" }
 serde_bytes = "0.11.12"
+chrono = "0.4.29"
