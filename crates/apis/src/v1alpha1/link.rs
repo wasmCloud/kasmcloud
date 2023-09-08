@@ -19,6 +19,7 @@ pub struct LinkSpec {
     pub provider: Source,
     pub actor: Source,
     pub contract_id: String,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub values: HashMap<String, String>,
 }
 
@@ -28,13 +29,14 @@ pub struct LinkStatus {
     pub provider_key: String,
     pub actor_key: String,
 
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub conditions: Vec<k8s_openapi::apimachinery::pkg::apis::meta::v1::Condition>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Source {
-    pub key: Option<String>,
-    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub key: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub name: String,
 }

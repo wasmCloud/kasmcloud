@@ -26,12 +26,12 @@ pub struct ProviderStatus {
     pub contract_id: String,
     pub descriptive_name: Option<String>,
 
-    pub vendor: String,
-    pub reversion: Option<i32>,
-    pub version: Option<String>,
     pub claims: super::Claims,
-
     pub architecture_targets: Vec<String>,
+
+    pub vendor: String,
+    pub version: Option<String>,
+    pub reversion: Option<i32>,
 
     pub conditions: Vec<k8s_openapi::apimachinery::pkg::apis::meta::v1::Condition>,
     pub instance_id: String,

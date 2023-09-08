@@ -1,1 +1,1 @@
-pub mod kasmcloud;
+pub mod v1alpha1;

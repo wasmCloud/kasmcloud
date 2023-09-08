@@ -32,16 +32,19 @@ type ActorSpec struct {
 
 // ActorStatus defines the observed state of Actor
 type ActorStatus struct {
-	PublicKey          string             `json:"publicKey"`
-	DescriptiveName    string             `json:"descriptiveName,omitempty"`
-	Caps               []string           `json:"caps,omitempty"`
-	CapabilityProvider []string           `json:"capabilityProvider,omitempty"`
-	CallAlias          string             `json:"callAlias,omitempty"`
-	Version            string             `json:"version"`
-	Reversion          *int               `json:"reversion,omitempty"`
-	Claims             Claims             `json:"claims"`
-	Conditions         []metav1.Condition `json:"conditions"`
-	AvailableReplicas  uint               `json:"availableReplicas"`
+	PublicKey       string `json:"publicKey"`
+	DescriptiveName string `json:"descriptiveName,omitempty"`
+
+	Caps               []string `json:"caps,omitempty"`
+	CapabilityProvider []string `json:"capabilityProvider,omitempty"`
+	CallAlias          *string  `json:"callAlias,omitempty"`
+	Claims             Claims   `json:"claims"`
+
+	Version   *string `json:"version,omitempty"`
+	Reversion *int    `json:"reversion,omitempty"`
+
+	Conditions        []metav1.Condition `json:"conditions"`
+	AvailableReplicas uint               `json:"availableReplicas"`
 }
 
 // +kubebuilder:object:root=true

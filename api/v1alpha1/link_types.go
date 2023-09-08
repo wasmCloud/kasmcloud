@@ -25,9 +25,10 @@ import (
 
 // LinkSpec defines the desired state of Link
 type LinkSpec struct {
-	Provider   Source `json:"provider"`
-	Actor      Source `json:"actor"`
-	ContractId string `json:"contractId"`
+	Provider   Source            `json:"provider"`
+	Actor      Source            `json:"actor"`
+	ContractId string            `json:"contractId"`
+	Values     map[string]string `json:"values,omitempty"`
 }
 
 // LinkStatus defines the observed state of Link
