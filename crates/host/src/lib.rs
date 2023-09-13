@@ -17,6 +17,7 @@ use futures::stream::{AbortHandle, Abortable};
 use futures::{stream, try_join, StreamExt, TryStreamExt};
 use nkeys::{KeyPair, KeyPairType};
 use serde_json::json;
+use sha2::{Digest, Sha256};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::RwLock;
 use tokio::{process, spawn};
@@ -220,7 +221,7 @@ impl Host {
         Ok(actor)
     }
 
-    pub async fn replica_actor(
+    pub async fn reconcile_actor(
         &self,
         name: String,
         actor_ref: String,
@@ -637,15 +638,15 @@ impl Host {
             )
     }
 
-    pub async fn add_linkdef(&self, id: &str, ld: LinkDefinition) -> anyhow::Result<()> {
-        println!("add linkef: {}", id);
-        let mut links = self.links.write().await;
-        if let hash_map::Entry::Vacant(entry) = links.entry(id.to_string()) {
+    pub async fn add_linkdef(&self, ld: LinkDefinition) -> anyhow::Result<()> {
+        let id = linkdef_hash(&ld.actor_id, &ld.contract_id, &ld.link_name);
+        if let hash_map::Entry::Vacant(entry) = self.links.write().await.entry(id.clone()) {
             entry.insert(ld.clone());
         } else {
             return Ok(());
         }
 
+        println!("add linkdef: {id}, ld: {:?}", &ld);
         if let Some(actor) = self.actors.read().await.get(&ld.actor_id) {
             let mut links = actor.links.write().await;
 
@@ -675,9 +676,9 @@ impl Host {
         Ok(())
     }
 
-    pub async fn delete_linkdef(&self, id: &str) -> anyhow::Result<()> {
-        println!("delete linkef: {}", id);
-        let mut links = self.links.write().await;
+    pub async fn delete_linkdef(&self, ld: LinkDefinition) -> anyhow::Result<()> {
+        let id = linkdef_hash(&ld.actor_id, &ld.contract_id, &ld.link_name);
+        println!("delete linkdef: {}", id);
 
         let ref ld @ LinkDefinition {
             ref actor_id,
@@ -685,8 +686,11 @@ impl Host {
             ref contract_id,
             ref link_name,
             ..
-        } = links
-            .remove(id)
+        } = self
+            .links
+            .write()
+            .await
+            .remove(&id)
             .context("attempt to remove a non-exitent link")?;
 
         if let Some(actor) = self.actors.read().await.get(actor_id) {
@@ -707,4 +711,16 @@ impl Host {
             .context("failed to publish link definition deletion")?;
         Ok(())
     }
+}
+
+fn linkdef_hash(
+    actor_id: impl AsRef<str>,
+    contract_id: impl AsRef<str>,
+    link_name: impl AsRef<str>,
+) -> String {
+    let mut hash = Sha256::default();
+    hash.update(actor_id.as_ref());
+    hash.update(contract_id.as_ref());
+    hash.update(link_name.as_ref());
+    hex::encode_upper(hash.finalize())
 }

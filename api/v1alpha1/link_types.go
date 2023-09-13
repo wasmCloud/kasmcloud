@@ -25,6 +25,7 @@ import (
 
 // LinkSpec defines the desired state of Link
 type LinkSpec struct {
+	LinkName   string            `json:"linkName,omitempty"`
 	Provider   Source            `json:"provider"`
 	Actor      Source            `json:"actor"`
 	ContractId string            `json:"contractId"`
@@ -35,6 +36,7 @@ type LinkSpec struct {
 type LinkStatus struct {
 	ProviderKey string `json:"providerKey"`
 	ActorKey    string `json:"actorKey"`
+	LinkName    string `json:"linkName"`
 
 	Conditions []metav1.Condition `json:"conditions"`
 }
@@ -48,6 +50,7 @@ type Source struct {
 // +kubebuilder:resource:path=links,scope=Namespaced,categories=kasmcloud
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="ContractId",type="string",JSONPath=".spec.contractId"
+// +kubebuilder:printcolumn:name="Link",type="string",JSONPath=".status.linkName"
 // +kubebuilder:printcolumn:name="ActoryKey",type="string",JSONPath=".status.actorKey"
 // +kubebuilder:printcolumn:name="ProviderKey",type="string",JSONPath=".status.providerKey"
 

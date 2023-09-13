@@ -12,6 +12,7 @@ async-trait = { workspace = true }
 base64 = { workspace = true }
 bytes = { workspace = true }
 futures = { workspace = true }
+hex = { workspace = true, features = ["std"] }
 http = { workspace = true }
 k8s-openapi = { workspace = true }
 nkeys = { workspace = true }
@@ -22,6 +23,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 serde_bytes = { workspace = true }
+sha2 = { workspace = true }
 thiserror =  { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
