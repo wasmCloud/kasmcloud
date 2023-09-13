@@ -21,6 +21,7 @@ use sha2::{Digest, Sha256};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::RwLock;
 use tokio::{process, spawn};
+use tracing::{error, info, instrument};
 use ulid::Ulid;
 use url::Url;
 use uuid::Uuid;
@@ -132,7 +133,6 @@ impl Host {
 
         let mut cluster_issuers = config.cluster_issuers.clone().unwrap_or_default();
         if !cluster_issuers.contains(&cluster_key.public_key()) {
-            println!("adding cluster key to cluster issuers");
             cluster_issuers.push(cluster_key.public_key());
         }
 
@@ -168,14 +168,14 @@ impl Host {
         let (rpc_nats, prov_rpc_nats) = try_join!(
             async {
                 let rpc_nats_url = config.rpc_config.url.as_str();
-                println!("connecting to NATS RPC server: {rpc_nats_url}");
+                info!("connecting to NATS RPC server: {rpc_nats_url}");
                 connect_nats(config.rpc_config.clone())
                     .await
                     .context("failed to establish NATS RPC server connection")
             },
             async {
                 let prov_rpc_nats_url = config.prov_rpc_config.url.as_str();
-                println!("connecting to NATS Provider RPC server: {prov_rpc_nats_url}");
+                info!("connecting to NATS Provider RPC server: {prov_rpc_nats_url}");
                 connect_nats(config.prov_rpc_config.clone())
                     .await
                     .context("failed to establish NATS provider RPC server connection")
@@ -210,6 +210,7 @@ impl Host {
         })
     }
 
+    #[instrument(skip_all)]
     async fn fetch_actor(&self, actor_ref: &str) -> anyhow::Result<wasmcloud_runtime::Actor> {
         let setting = self.registry_settings.read().await;
         let actor = wasmcloud_host::fetch_actor(actor_ref, self.config.allow_file_load, &setting)
@@ -221,6 +222,7 @@ impl Host {
         Ok(actor)
     }
 
+    #[instrument(skip(self))]
     pub async fn reconcile_actor(
         &self,
         name: String,
@@ -228,15 +230,13 @@ impl Host {
         replica: usize,
     ) -> anyhow::Result<jwt::Claims<jwt::Actor>> {
         let actor = self.fetch_actor(&actor_ref).await?;
-        let claims = actor.claims().context("claims missing")?;
+        let claims = actor.claims().context("claims missing")?.clone();
 
         if let Some(public_key) = self.actor_keys.read().await.get(&name) {
             if public_key != &claims.subject {
                 return Err(anyhow!("actor public key is change"));
             }
         }
-
-        let x = claims.clone();
 
         if let hash_map::Entry::Vacant(entry) = self.actor_keys.write().await.entry(name.clone()) {
             entry.insert(claims.subject.clone());
@@ -285,6 +285,7 @@ impl Host {
                         instances.append(&mut delta);
                     }
                 } else if let Some(delta) = current.checked_sub(replica) {
+                    info!("stop {delta} actor instances");
                     stream::iter(instances.drain(..delta))
                         .map(Ok)
                         .try_for_each_concurrent(None, |instance| {
@@ -296,13 +297,15 @@ impl Host {
                 };
             }
         }
-        Ok(x)
+        Ok(claims)
     }
 
+    #[instrument(skip(self))]
     pub async fn remove_actor(&self, name: String) -> anyhow::Result<()> {
         let public_key = if let Some(key) = self.actor_keys.read().await.get(&name) {
             key.clone()
         } else {
+            info!("remove actor success");
             return Ok(());
         };
 
@@ -330,14 +333,16 @@ impl Host {
 
             if group.actors.read().await.is_empty() {
                 entry.remove();
+                info!("all actors({public_key}) is removed");
             }
         };
 
         self.actor_keys.write().await.remove(&name);
-        println!("remove actor success");
+        info!("remove actor success");
         Ok(())
     }
 
+    #[instrument(skip_all)]
     pub async fn start_actor(
         &self,
         actor: wasmcloud_runtime::Actor,
@@ -366,14 +371,6 @@ impl Host {
             aliases: Arc::clone(&self.aliases),
         };
 
-        println!(
-            "in start_actor, actor_ref: {}, replica: {}, host_id: {}, lattice_prefix: {}",
-            actor_ref,
-            replica,
-            self.host_key.public_key(),
-            self.lattice_prefix
-        );
-
         let pool = ActorInstancePool::new(actor.clone(), Some(replica.clone()));
         let instances = self
             .instantiate_actor(claims, &actor_ref, replica, pool.clone(), handler.clone())
@@ -388,25 +385,30 @@ impl Host {
         }))
     }
 
+    #[instrument(skip_all)]
     pub async fn instantiate_actor(
         &self,
         claims: &jwt::Claims<jwt::Actor>,
         actor_ref: impl AsRef<str>,
-        replica: NonZeroUsize,
+        count: NonZeroUsize,
         pool: ActorInstancePool,
         handler: Handler,
     ) -> anyhow::Result<Vec<Arc<actor::ActorInstance>>> {
         let actor_ref = actor_ref.as_ref();
+        info!(
+            subject = claims.subject,
+            actor_ref = actor_ref,
+            "instantiate {count} actor instances",
+        );
         let instances = futures::stream::repeat(format!(
             "wasmbus.rpc.{lattice_prefix}.{subject}",
             lattice_prefix = self.lattice_prefix,
             subject = claims.subject
         ))
-        .take(replica.into())
+        .take(count.into())
         .then(|topic| {
             let pool = pool.clone();
             let handler = handler.clone();
-            let claims = claims.clone();
             async move {
                 let calls = self
                     .rpc_nats
@@ -427,13 +429,11 @@ impl Host {
                     chunk_endpoint: self.chunk_endpoint.clone(),
                     valid_issuers: self.cluster_issuers.clone(),
                 });
-                println!("new actor instance: {}", claims.subject);
 
                 let _calls = spawn({
                     let instance = Arc::clone(&instance);
                     Abortable::new(calls, calls_abort_reg).for_each_concurrent(None, move |msg| {
                         let instance = Arc::clone(&instance);
-                        println!("get msg");
                         async move { instance.handle_message(msg).await }
                     })
                 });
@@ -447,13 +447,14 @@ impl Host {
         Ok(instances)
     }
 
+    #[instrument(skip(self))]
     pub async fn start_provider(
         &self,
         link_name: String,
         provider_ref: String,
     ) -> anyhow::Result<jwt::Claims<jwt::CapabilityProvider>> {
         let registry_setting = self.registry_settings.read().await;
-        println!("wait fetch provider image");
+        info!("wait fetch provider image");
         let (path, claims) = wasmcloud_host::fetch_provider(
             &provider_ref,
             &link_name,
@@ -462,8 +463,6 @@ impl Host {
         )
         .await
         .context("failed to fetch provider")?;
-
-        println!("provider image is fetched");
 
         let mut target = RequestTarget::from(claims.clone());
         target.link_name = Some(link_name.clone());
@@ -559,24 +558,27 @@ impl Host {
             stdin.shutdown().await.context("failed to close stdin")?;
 
             entry.insert(provider::ProviderInstance { id, child });
-            println!("run provider");
+            info!("run provider, instance_id: {id}");
         } else {
-            println!("provider is running");
+            info!("provider is running");
         }
         Ok(claims.clone())
     }
 
+    #[instrument(skip(self))]
     pub async fn stop_provider(&self, link_name: String, key: String) -> anyhow::Result<()> {
         let mut providers = self.providers.write().await;
         let hash_map::Entry::Occupied(mut entry) = providers.entry( key.clone()) else {
+            info!("provider is stopped");
             return Ok(());
         };
 
         let provider = entry.get_mut();
         let instances = &mut provider.instances;
         if let hash_map::Entry::Occupied(entry) = instances.entry(link_name.clone()) {
-            let provider::ProviderInstance { id, child } = entry.remove();
+            entry.remove();
 
+            info!("send gracefully shut down requsest");
             if let Ok(payload) =
                 serde_json::to_vec(&json!({ "host_id": self.host_key.public_key()}))
             {
@@ -593,14 +595,14 @@ impl Host {
                     )
                     .await
                 {
-                    println!(
-                        "Provider didn't gracefully shut down in time, shuting down forcefully"
+                    error!(
+                        "Provider didn't gracefully shut down in time, shuting down forcefully: {e}"
                     );
                 }
-                // child.abort();
             }
         }
         if instances.is_empty() {
+            info!("don't have provider({key})'s instances");
             entry.remove();
         }
 
@@ -638,15 +640,17 @@ impl Host {
             )
     }
 
+    #[instrument(skip(self))]
     pub async fn add_linkdef(&self, ld: LinkDefinition) -> anyhow::Result<()> {
         let id = linkdef_hash(&ld.actor_id, &ld.contract_id, &ld.link_name);
         if let hash_map::Entry::Vacant(entry) = self.links.write().await.entry(id.clone()) {
             entry.insert(ld.clone());
         } else {
+            info!("skip linkdef");
             return Ok(());
         }
 
-        println!("add linkdef: {id}, ld: {:?}", &ld);
+        info!("add linkdef");
         if let Some(actor) = self.actors.read().await.get(&ld.actor_id) {
             let mut links = actor.links.write().await;
 
@@ -676,10 +680,11 @@ impl Host {
         Ok(())
     }
 
+    #[instrument(skip(self))]
     pub async fn delete_linkdef(&self, ld: LinkDefinition) -> anyhow::Result<()> {
         let id = linkdef_hash(&ld.actor_id, &ld.contract_id, &ld.link_name);
-        println!("delete linkdef: {}", id);
 
+        info!("delete linkdef");
         let ref ld @ LinkDefinition {
             ref actor_id,
             ref provider_id,
