@@ -9,7 +9,7 @@ use bytes::{BufMut, Bytes, BytesMut};
 use futures::stream::AbortHandle;
 use tokio::io::{stderr, AsyncRead, AsyncWrite};
 use tokio::sync::RwLock;
-use tracing::{debug, error, info, instrument, trace, warn};
+use tracing::{debug, error, instrument};
 use ulid::Ulid;
 
 use wasmcloud_core::{
@@ -47,6 +47,7 @@ pub struct ActorInstance {
 }
 
 impl ActorInstance {
+    #[instrument(skip(self, msg))]
     async fn handle_invocation(
         &self,
         contract_id: &str,
@@ -111,6 +112,7 @@ impl ActorInstance {
         }
     }
 
+    #[instrument(skip_all)]
     async fn handle_call(&self, payload: impl AsRef<[u8]>) -> anyhow::Result<Bytes> {
         let invocation: Invocation =
             rmp_serde::from_slice(payload.as_ref()).context("failed to decode invocation")?;
@@ -169,6 +171,7 @@ impl ActorInstance {
             .context("failed to encode response")
     }
 
+    #[instrument(skip_all)]
     pub async fn handle_message(
         &self,
         async_nats::Message {
@@ -182,11 +185,11 @@ impl ActorInstance {
         match (reply, res) {
             (Some(reply), Ok(buf)) => {
                 if let Err(e) = self.nats.publish(reply, buf).await {
-                    println!("failed to publish response to `{subject}` request: {e:?}");
+                    error!("failed to publish response to `{subject}` request: {e:?}");
                 }
             }
             (_, Err(e)) => {
-                println!("failed to handle `{subject}` request: {e:?}");
+                error!("failed to handle `{subject}` request: {e:?}");
             }
             _ => {}
         }

@@ -1,6 +1,7 @@
 use core::time::Duration;
 use std::collections::{hash_map, HashMap, HashSet};
 use std::path::Path;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use anyhow::Context as _;
@@ -12,16 +13,19 @@ use nkeys::KeyPair;
 use serde_derive::Deserialize;
 use thiserror::Error;
 use tokio::sync::RwLock;
+use tracing::{error, info, instrument, warn, Level as TracingLogLevel};
 use url::Url;
 
 use k8s_openapi::apimachinery::pkg::apis::meta::v1 as metav1;
 use kube::api::{Patch, PatchParams};
-use kube::core::Resource;
 use kube::runtime::controller::Action;
 use kube::runtime::watcher::Config as WatchConfig;
 use kube::runtime::{finalizer, Controller};
 use kube::{Api, Client, ResourceExt};
 use wasmcloud_control_interface::LinkDefinition;
+use wasmcloud_core::logging::Level as WasmcloudLogLevel;
+use wasmcloud_core::OtelConfig;
+use wasmcloud_tracing::configure_tracing;
 
 use kasmcloud_apis::v1alpha1;
 use kasmcloud_host::*;
@@ -45,6 +49,11 @@ struct KasmCloudConfig {
     cluster_seed: Option<String>,
     cluster_issuers: Option<Vec<String>>,
     js_domain: Option<String>,
+
+    log_level: String,
+    enable_structured_logging: bool,
+    otel_traces_exporter: Option<String>,
+    otel_exporter_otlp_endpoint: Option<String>,
 }
 
 #[tokio::main]
@@ -54,12 +63,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut builder = Config::builder()
         .set_default("nats_host", "127.0.0.1")?
         .set_default("nats_port", "4222")?
+        .set_default("log_level", "info")?
+        .set_default("enable_structured_logging", false)?
         .add_source(Environment::with_prefix("kasmcloud"));
-
     if Path::new(&args.config).exists() {
         builder = builder.add_source(File::with_name(&args.config))
     }
     let config: KasmCloudConfig = builder.build()?.try_deserialize()?;
+
+    let otel_config = OtelConfig {
+        traces_exporter: config.otel_traces_exporter,
+        exporter_otlp_endpoint: config.otel_exporter_otlp_endpoint,
+    };
+    let level = TracingLogLevel::from_str(&config.log_level).context("invalid log_level")?;
+    let log_level = WasmcloudLogLevel::from(level);
+    if let Err(e) = configure_tracing(
+        "KasmCloud Host".to_string(),
+        &otel_config,
+        config.enable_structured_logging,
+        Some(&log_level),
+    ) {
+        eprintln!("Failed to configure tracing: {e}");
+    };
 
     let host_key = config
         .host_seed
@@ -108,7 +133,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         cluster_key,
         cluster_issuers: config.cluster_issuers,
 
-        log_level: Some(wasmcloud_core::logging::Level::Debug),
+        log_level: Some(log_level),
         allow_file_load: true,
     };
     let host = Host::new(config)
@@ -197,9 +222,8 @@ struct Ctx {
 #[derive(Debug, Error)]
 enum Error {}
 
+#[instrument(skip(actor, ctx))]
 async fn reconcile_actor(actor: Arc<v1alpha1::Actor>, ctx: Arc<Ctx>) -> Result<Action, Error> {
-    println!("applied actor: {:#?}", actor.name_any());
-
     match ctx
         .host
         .reconcile_actor(
@@ -283,30 +307,29 @@ async fn reconcile_actor(actor: Arc<v1alpha1::Actor>, ctx: Arc<Ctx>) -> Result<A
                 )
                 .await
             {
-                println!("patch actor failed: {:?}", err);
+                error!("patch actor failed: {:?}", err);
             }
         }
         Err(err) => {
-            println!("reconcile actor failed: {:?}", err);
+            error!("reconcile actor failed: {:?}", err);
         }
     }
 
     Ok(Action::await_change())
 }
 
+#[instrument(skip(actor, ctx))]
 async fn delete_actor(actor: Arc<v1alpha1::Actor>, ctx: Arc<Ctx>) -> Result<Action, Error> {
-    println!("delete actor: {:#?}", actor.name_any());
-
     if let Err(err) = ctx.host.remove_actor(actor.name_any()).await {
-        println!("delete actor failed: {:?}", err);
+        error!("delete actor failed: {:?}", err);
         Ok(Action::requeue(Duration::from_secs(60)))
     } else {
         Ok(Action::await_change())
     }
 }
 
+#[instrument(skip(link, ctx))]
 async fn add_link(link: Arc<v1alpha1::Link>, ctx: Arc<Ctx>) -> Result<Action, Error> {
-    println!("add link: {}", link.name_any());
     let spec = &link.spec;
 
     let mut ld = LinkDefinition::default();
@@ -315,7 +338,7 @@ async fn add_link(link: Arc<v1alpha1::Link>, ctx: Arc<Ctx>) -> Result<Action, Er
     if !spec.link_name.is_empty() {
         ld.link_name = spec.link_name.clone();
     } else if !spec.provider.key.is_empty() {
-        println!("please set provider's link name");
+        error!("please set provider's link name");
         return Ok(Action::await_change());
     }
 
@@ -339,24 +362,23 @@ async fn add_link(link: Arc<v1alpha1::Link>, ctx: Arc<Ctx>) -> Result<Action, Er
                 Ok(actor) => {
                     if let Some(status) = actor.status {
                         if status.public_key == "" {
-                            println!("actor:{name}  public key is empty");
+                            warn!("actor:{name}  public key is empty");
                             return Ok(Action::requeue(Duration::from_secs(10)));
                         } else {
                             ld.actor_id = status.public_key
                         }
                     } else {
-                        println!("actor:{name} status is None");
+                        warn!("actor:{name} status is None");
                         return Ok(Action::requeue(Duration::from_secs(10)));
                     }
                 }
                 Err(err) => {
-                    println!("get actor:{name} failed: {:?}", err);
+                    warn!("get actor:{name} failed: {:?}", err);
                     return Ok(Action::requeue(Duration::from_secs(60)));
                 }
             }
         } else {
-            // TODO(Iceber): Add log or error
-            println!("link({})'s actor is empty", link.name_any());
+            error!("link({})'s actor is empty", link.name_any());
             return Ok(Action::await_change());
         };
     }
@@ -368,39 +390,38 @@ async fn add_link(link: Arc<v1alpha1::Link>, ctx: Arc<Ctx>) -> Result<Action, Er
                 Ok(provider) => {
                     if !ld.link_name.is_empty() && ld.link_name != provider.spec.link {
                         // TODO(Iceber): update conditions
-                        println!(
-                            "linkdefinitions({}) not match provider's link({})",
-                            link.name_any(),
-                            provider.spec.link
+                        error!(
+                            "link name({}) not match provider's link({})",
+                            ld.link_name, provider.spec.link
                         );
                         return Ok(Action::await_change());
                     }
 
                     if let Some(status) = provider.status {
                         if status.public_key.is_empty() {
-                            println!("provider:{name} public key is empty");
+                            info!("provider:{name} public key is empty");
                             return Ok(Action::requeue(Duration::from_secs(10)));
                         } else if !key.is_empty() && status.public_key != key.clone() {
-                            println!("provider:{name} public key is not match provider.key");
+                            info!("provider:{name} public key is not match provider.key");
                             return Ok(Action::requeue(Duration::from_secs(10)));
                         } else {
                             ld.provider_id = status.public_key;
                             ld.link_name = provider.spec.link;
                         }
                     } else {
-                        println!("provider:{name} status is None");
+                        info!("provider:{name} status is None");
                         return Ok(Action::requeue(Duration::from_secs(10)));
                     }
                 }
                 Err(err) => {
-                    println!("get provider:{name} failed: {:?}", err);
+                    warn!("get provider:{name} failed: {:?}", err);
                     return Ok(Action::requeue(Duration::from_secs(60)));
                 }
             }
         } else if !key.is_empty() {
             ld.provider_id = key.clone();
         } else {
-            println!("link({})'s provider is empty", link.name_any());
+            error!("link({})'s provider is empty", link.name_any());
             return Ok(Action::await_change());
         };
     }
@@ -408,10 +429,12 @@ async fn add_link(link: Arc<v1alpha1::Link>, ctx: Arc<Ctx>) -> Result<Action, Er
     let id = format!("{}.{}.{}", ld.contract_id, ld.actor_id, ld.link_name);
     match ctx.links.write().await.entry(id.to_string()) {
         hash_map::Entry::Vacant(entry) => {
-            entry.insert((ld.clone(), HashSet::from([link.name_any()])));
             if let Err(err) = ctx.host.add_linkdef(ld.clone()).await {
-                println!("add linkdef failed: {:?}", err);
+                error!("add linkdef failed: {:?}", err);
+                // TODO(Iceber): update condition
+                return Ok(Action::await_change());
             }
+            entry.insert((ld.clone(), HashSet::from([link.name_any()])));
         }
         hash_map::Entry::Occupied(mut entry) => {
             // TODO(iceber):
@@ -446,13 +469,12 @@ async fn add_link(link: Arc<v1alpha1::Link>, ctx: Arc<Ctx>) -> Result<Action, Er
         )
         .await
     {
-        println!("patch link failed: {:?}", err);
+        error!("patch link failed: {:?}", err);
     }
     Ok(Action::await_change())
 }
 
 async fn delete_link(link: Arc<v1alpha1::Link>, ctx: Arc<Ctx>) -> Result<Action, Error> {
-    println!("delete link: {}", link.name_any());
     if let Some(status) = &link.status {
         if !status.provider_key.is_empty()
             && !status.actor_key.is_empty()
@@ -468,7 +490,7 @@ async fn delete_link(link: Arc<v1alpha1::Link>, ctx: Arc<Ctx>) -> Result<Action,
                 ref_names.remove(&link.name_any());
                 if ref_names.is_empty() {
                     if let Err(err) = ctx.host.delete_linkdef(ld.clone()).await {
-                        println!("delete linkdef failed: {:?}", err);
+                        error!("delete linkdef failed: {:?}", err);
                         return Ok(Action::requeue(Duration::from_secs(10)));
                     }
                     entry.remove();
@@ -480,8 +502,6 @@ async fn delete_link(link: Arc<v1alpha1::Link>, ctx: Arc<Ctx>) -> Result<Action,
 }
 
 async fn reconcile_provider(g: Arc<v1alpha1::Provider>, ctx: Arc<Ctx>) -> Result<Action, Error> {
-    println!("applied provider: {:#?}", g.name_any());
-
     let spec = g.spec.clone();
     match ctx
         .host
@@ -550,9 +570,6 @@ async fn reconcile_provider(g: Arc<v1alpha1::Provider>, ctx: Arc<Ctx>) -> Result
             let data = serde_json::json!({ "status": status });
 
             if let Some(s) = g.status.clone() {
-                println!("status is not empty");
-                println!("old provider data: {:?}", &s);
-                println!("provider data: {:?}", &status);
                 if s == status {
                     return Ok(Action::await_change());
                 }
@@ -567,11 +584,11 @@ async fn reconcile_provider(g: Arc<v1alpha1::Provider>, ctx: Arc<Ctx>) -> Result
                 )
                 .await
             {
-                println!("patch provider failed: {:?}", err);
+                error!("patch provider failed: {:?}", err);
             }
         }
         Err(err) => {
-            println!("reconcile provider failed: {:?}", err);
+            error!("reconcile provider failed: {:?}", err);
         }
     }
 
@@ -590,14 +607,14 @@ async fn delete_provider(
     } else {
         return Ok(Action::await_change());
     };
-    println!("handle deleted provider");
 
     if let Err(err) = ctx
         .host
         .stop_provider(provider.spec.link.clone(), status.public_key.clone())
         .await
     {
-        println!("delete provider failed: {:?}", err);
+        error!("delete provider failed: {:?}", err);
+        return Ok(Action::requeue(Duration::from_secs(10)));
     }
 
     Ok(Action::await_change())

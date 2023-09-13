@@ -14,7 +14,7 @@ use nkeys::KeyPair;
 use serde::{Deserialize, Serialize};
 use tokio::io::{empty, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::RwLock;
-use tracing::{debug, error, info, instrument, trace, warn};
+use tracing::{instrument, trace};
 
 use wascap::jwt;
 use wasmcloud_core::chunking::{ChunkEndpoint, CHUNK_RPC_EXTRA_TIME, CHUNK_THRESHOLD_BYTES};
