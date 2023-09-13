@@ -52,7 +52,8 @@ type ActorStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Desc",type="string",JSONPath=".status.descriptiveName"
 // +kubebuilder:printcolumn:name="PublicKey",type="string",JSONPath=".status.publicKey"
-// +kubebuilder:printcolumn:name="Replica",type="integer",JSONPath=".spec.replica"
+// +kubebuilder:printcolumn:name="Replicas",type="integer",JSONPath=".spec.replicas"
+// +kubebuilder:printcolumn:name="AvailableReplicas",type="integer",JSONPath=".status.availableReplicas"
 // +kubebuilder:printcolumn:name="Caps",type="string",JSONPath=".status.capabilityProvider"
 // +kubebuilder:printcolumn:name="Image",type="string",JSONPath=".spec.image"
 

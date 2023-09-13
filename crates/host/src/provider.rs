@@ -7,6 +7,7 @@ use wascap::jwt;
 
 pub struct Provider {
     pub claims: jwt::Claims<jwt::CapabilityProvider>,
+    // link name -> ProviderInstance
     pub instances: HashMap<String, ProviderInstance>,
     pub image_ref: String,
 }

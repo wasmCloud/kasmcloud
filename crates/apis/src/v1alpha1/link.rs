@@ -16,6 +16,8 @@ use kube::CustomResource;
 #[kube(category = "kasmcloud")]
 #[serde(rename_all = "camelCase")]
 pub struct LinkSpec {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub link_name: String,
     pub provider: Source,
     pub actor: Source,
     pub contract_id: String,
@@ -28,6 +30,7 @@ pub struct LinkSpec {
 pub struct LinkStatus {
     pub provider_key: String,
     pub actor_key: String,
+    pub link_name: String,
 
     pub conditions: Vec<k8s_openapi::apimachinery::pkg::apis::meta::v1::Condition>,
 }

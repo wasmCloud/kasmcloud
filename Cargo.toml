@@ -71,6 +71,7 @@ async-trait = "0.1.73"
 base64 = "0.21.3"
 bytes = "1.4.0"
 futures = "0.3.28"
+hex = "0.4"
 http = "0.2.9"
 k8s-openapi = { version = "0.19.0", features = ["schemars", "v1_27"]}
 kube = { version = "0.85.0", features = ["gzip", "jsonpatch", "runtime", "derive", "unstable-runtime"] }
@@ -81,6 +82,7 @@ schemars = "0.8.13"
 serde = "1.0.188"
 serde_json = "1.0.105"
 serde_yaml = "0.9.25"
+sha2 = "0.10"
 thiserror = "1.0.47"
 tokio = { version = "1.32.0", features = ["full"] }
 tracing = "0.1.37"

@@ -1,4 +1,5 @@
 use core::time::Duration;
+use std::collections::{hash_map, HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -10,6 +11,7 @@ use futures::{future::ready, join, StreamExt};
 use nkeys::KeyPair;
 use serde_derive::Deserialize;
 use thiserror::Error;
+use tokio::sync::RwLock;
 use url::Url;
 
 use k8s_openapi::apimachinery::pkg::apis::meta::v1 as metav1;
@@ -119,16 +121,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let links: Api<v1alpha1::Link> = Api::namespaced(client.clone(), &namespace);
 
     let ctx = Arc::new(Ctx {
-        actors: actors.clone(),
-        providers: providers.clone(),
-        links: links.clone(),
+        actor_client: actors.clone(),
+        provider_client: providers.clone(),
+        link_client: links.clone(),
         host,
+        links: RwLock::default(),
     });
 
     let links = Controller::new(links, WatchConfig::default())
         .run(
             |link, ctx| async move {
-                let links = ctx.links.clone();
+                let links = ctx.link_client.clone();
                 finalizer::finalizer(&links, "kasmcloud-host/cleanup", link, |event| async {
                     match event {
                         finalizer::Event::Apply(link) => add_link(link, ctx).await,
@@ -145,7 +148,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let actors = Controller::new(actors, WatchConfig::default())
         .run(
             |actor, ctx| async move {
-                let actors = ctx.actors.clone();
+                let actors = ctx.actor_client.clone();
                 finalizer::finalizer(&actors, "kasmcloud-host/cleanup", actor, |event| async {
                     match event {
                         finalizer::Event::Apply(actor) => reconcile_actor(actor, ctx).await,
@@ -162,7 +165,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let providers = Controller::new(providers, WatchConfig::default())
         .run(
             |actor, ctx| async move {
-                let providers = ctx.providers.clone();
+                let providers = ctx.provider_client.clone();
                 finalizer::finalizer(&providers, "kasmcloud-host/cleanup", actor, |event| async {
                     match event {
                         finalizer::Event::Apply(actor) => reconcile_provider(actor, ctx).await,
@@ -183,10 +186,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 // TODO(Iceber): add reflector store
 struct Ctx {
-    actors: Api<v1alpha1::Actor>,
-    providers: Api<v1alpha1::Provider>,
-    links: Api<v1alpha1::Link>,
+    actor_client: Api<v1alpha1::Actor>,
+    provider_client: Api<v1alpha1::Provider>,
+    link_client: Api<v1alpha1::Link>,
     host: Host,
+
+    links: RwLock<HashMap<String, (LinkDefinition, HashSet<String>)>>,
 }
 
 #[derive(Debug, Error)]
@@ -197,7 +202,7 @@ async fn reconcile_actor(actor: Arc<v1alpha1::Actor>, ctx: Arc<Ctx>) -> Result<A
 
     match ctx
         .host
-        .replica_actor(
+        .reconcile_actor(
             actor.name_any(),
             actor.spec.image.clone(),
             actor.spec.replicas as usize,
@@ -270,7 +275,7 @@ async fn reconcile_actor(actor: Arc<v1alpha1::Actor>, ctx: Arc<Ctx>) -> Result<A
             }
 
             if let Err(err) = ctx
-                .actors
+                .actor_client
                 .patch_status(
                     actor.name_any().as_str(),
                     &PatchParams::default(),
@@ -301,25 +306,36 @@ async fn delete_actor(actor: Arc<v1alpha1::Actor>, ctx: Arc<Ctx>) -> Result<Acti
 }
 
 async fn add_link(link: Arc<v1alpha1::Link>, ctx: Arc<Ctx>) -> Result<Action, Error> {
+    println!("add link: {}", link.name_any());
     let spec = &link.spec;
 
     let mut ld = LinkDefinition::default();
     ld.contract_id = spec.contract_id.clone();
-    ld.link_name = link.name_any();
     ld.values = spec.values.clone();
+    if !spec.link_name.is_empty() {
+        ld.link_name = spec.link_name.clone();
+    } else if !spec.provider.key.is_empty() {
+        println!("please set provider's link name");
+        return Ok(Action::await_change());
+    }
 
     if let Some(status) = &link.status {
-        if status.provider_key != "" && status.actor_key != "" {
+        if !status.provider_key.is_empty()
+            && !status.actor_key.is_empty()
+            && !status.link_name.is_empty()
+        {
             ld.actor_id = status.actor_key.clone();
             ld.provider_id = status.provider_key.clone();
+            ld.link_name = status.link_name.clone();
         }
-    } else {
+    }
+    if ld.actor_id.is_empty() {
         let key = &spec.actor.key;
         let name = &spec.actor.name;
         if !key.is_empty() {
             ld.actor_id = key.clone();
         } else if !name.is_empty() {
-            match ctx.actors.get(name).await {
+            match ctx.actor_client.get(name).await {
                 Ok(actor) => {
                     if let Some(status) = actor.status {
                         if status.public_key == "" {
@@ -340,21 +356,36 @@ async fn add_link(link: Arc<v1alpha1::Link>, ctx: Arc<Ctx>) -> Result<Action, Er
             }
         } else {
             // TODO(Iceber): Add log or error
+            println!("link({})'s actor is empty", link.name_any());
+            return Ok(Action::await_change());
         };
-
+    }
+    if ld.provider_id.is_empty() || ld.link_name.is_empty() {
         let key = &spec.provider.key;
         let name = &spec.provider.name;
-        if !key.is_empty() {
-            ld.provider_id = key.clone();
-        } else if !name.is_empty() {
-            match ctx.providers.get(name).await {
+        if !name.is_empty() {
+            match ctx.provider_client.get(name).await {
                 Ok(provider) => {
+                    if !ld.link_name.is_empty() && ld.link_name != provider.spec.link {
+                        // TODO(Iceber): update conditions
+                        println!(
+                            "linkdefinitions({}) not match provider's link({})",
+                            link.name_any(),
+                            provider.spec.link
+                        );
+                        return Ok(Action::await_change());
+                    }
+
                     if let Some(status) = provider.status {
-                        if status.public_key == "" {
-                            println!("provider:{name}  public key is empty");
+                        if status.public_key.is_empty() {
+                            println!("provider:{name} public key is empty");
+                            return Ok(Action::requeue(Duration::from_secs(10)));
+                        } else if !key.is_empty() && status.public_key != key.clone() {
+                            println!("provider:{name} public key is not match provider.key");
                             return Ok(Action::requeue(Duration::from_secs(10)));
                         } else {
-                            ld.provider_id = status.public_key
+                            ld.provider_id = status.public_key;
+                            ld.link_name = provider.spec.link;
                         }
                     } else {
                         println!("provider:{name} status is None");
@@ -366,22 +397,38 @@ async fn add_link(link: Arc<v1alpha1::Link>, ctx: Arc<Ctx>) -> Result<Action, Er
                     return Ok(Action::requeue(Duration::from_secs(60)));
                 }
             }
+        } else if !key.is_empty() {
+            ld.provider_id = key.clone();
         } else {
-            // TODO(Iceber): Add log or error
+            println!("link({})'s provider is empty", link.name_any());
+            return Ok(Action::await_change());
         };
     }
 
-    let id = link.meta().uid.clone().unwrap_or(link.name_any());
-    if let Err(err) = ctx.host.add_linkdef(&id, ld.clone()).await {
-        println!("add failed: {:?}", err);
+    let id = format!("{}.{}.{}", ld.contract_id, ld.actor_id, ld.link_name);
+    match ctx.links.write().await.entry(id.to_string()) {
+        hash_map::Entry::Vacant(entry) => {
+            entry.insert((ld.clone(), HashSet::from([link.name_any()])));
+            if let Err(err) = ctx.host.add_linkdef(ld.clone()).await {
+                println!("add linkdef failed: {:?}", err);
+            }
+        }
+        hash_map::Entry::Occupied(mut entry) => {
+            // TODO(iceber):
+            // 1. if the provider_id has changed, then you need to error or
+            // otherwise handle the change.
+            // 2. if ld.values is not equal group.link.values, return error.
+            let (_, ref_names) = entry.get_mut();
+            ref_names.insert(link.name_any());
+        }
     }
 
     let status = v1alpha1::LinkStatus {
         provider_key: ld.provider_id.clone(),
         actor_key: ld.actor_id.clone(),
+        link_name: ld.link_name.clone(),
         conditions: Vec::new(),
     };
-
     let data = serde_json::json!({ "status": status });
 
     if let Some(s) = link.status.clone() {
@@ -391,7 +438,7 @@ async fn add_link(link: Arc<v1alpha1::Link>, ctx: Arc<Ctx>) -> Result<Action, Er
     }
 
     if let Err(err) = ctx
-        .links
+        .link_client
         .patch_status(
             link.name_any().as_str(),
             &PatchParams::default(),
@@ -405,11 +452,30 @@ async fn add_link(link: Arc<v1alpha1::Link>, ctx: Arc<Ctx>) -> Result<Action, Er
 }
 
 async fn delete_link(link: Arc<v1alpha1::Link>, ctx: Arc<Ctx>) -> Result<Action, Error> {
-    let id = link.meta().uid.clone().unwrap_or(link.name_any());
-    if let Err(err) = ctx.host.delete_linkdef(&id).await {
-        println!("add failed: {:?}", err);
+    println!("delete link: {}", link.name_any());
+    if let Some(status) = &link.status {
+        if !status.provider_key.is_empty()
+            && !status.actor_key.is_empty()
+            && !status.link_name.is_empty()
+        {
+            let id = format!(
+                "{}.{}.{}",
+                link.spec.contract_id, status.actor_key, status.link_name
+            );
+            if let hash_map::Entry::Occupied(mut entry) = ctx.links.write().await.entry(id.clone())
+            {
+                let (ld, ref_names) = entry.get_mut();
+                ref_names.remove(&link.name_any());
+                if ref_names.is_empty() {
+                    if let Err(err) = ctx.host.delete_linkdef(ld.clone()).await {
+                        println!("delete linkdef failed: {:?}", err);
+                        return Ok(Action::requeue(Duration::from_secs(10)));
+                    }
+                    entry.remove();
+                }
+            }
+        }
     }
-
     Ok(Action::await_change())
 }
 
@@ -493,7 +559,7 @@ async fn reconcile_provider(g: Arc<v1alpha1::Provider>, ctx: Arc<Ctx>) -> Result
             }
 
             if let Err(err) = ctx
-                .providers
+                .provider_client
                 .patch_status(
                     g.name_any().as_str(),
                     &PatchParams::default(),
