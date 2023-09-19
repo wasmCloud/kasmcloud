@@ -17,7 +17,13 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"fmt"
+	"reflect"
+	"strings"
+
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
@@ -43,7 +49,30 @@ var _ webhook.Defaulter = &Link{}
 func (r *Link) Default() {
 	linklog.Info("default", "name", r.Name)
 
-	// TODO(user): fill in your defaulting logic.
+	if r.Labels == nil {
+		r.Labels = make(map[string]string)
+	}
+
+	// `contractId: wasmcloud:httpserver` -> `contract=wasmcloud.httpserver`
+	r.Labels["contract"] = strings.ReplaceAll(r.Spec.ContractId, ":", ".")
+
+	if r.Status.ProviderKey != "" {
+		r.Labels["providerkey"] = r.Status.ProviderKey
+	} else {
+		delete(r.Labels, "providerkey")
+	}
+
+	if r.Status.LinkName != "" {
+		r.Labels["link"] = r.Status.LinkName
+	} else {
+		delete(r.Labels, "link")
+	}
+
+	if r.Status.ActorKey != "" {
+		r.Labels["actorkey"] = r.Status.ActorKey
+	} else {
+		delete(r.Labels, "actorkey")
+	}
 }
 
 // TODO(user): change verbs to "verbs=create;update;delete" if you want to enable deletion validation.
@@ -51,11 +80,38 @@ func (r *Link) Default() {
 
 var _ webhook.Validator = &Link{}
 
+func (r *Link) validate() (allErrs field.ErrorList) {
+	if r.Spec.Actor.Key == "" && r.Spec.Actor.Name == "" {
+		allErrs = append(allErrs, field.Invalid(
+			field.NewPath("spec", "actor"),
+			"",
+			"required .spec.actor.name or .spec.actor.key",
+		))
+	}
+
+	if r.Spec.Provider.Key == "" && r.Spec.Provider.Name == "" {
+		allErrs = append(allErrs, field.Invalid(
+			field.NewPath("spec", "provider"),
+			"",
+			"required .spec.provider.name or .spec.provider.key",
+		))
+	} else if r.Spec.Provider.Name == "" && r.Spec.LinkName == "" {
+		allErrs = append(allErrs, field.Invalid(
+			field.NewPath("spec", "linkName"),
+			"",
+			"must set spec.linkName, if only set spec.provider.key",
+		))
+	}
+	return
+}
+
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
 func (r *Link) ValidateCreate() (admission.Warnings, error) {
 	linklog.Info("validate create", "name", r.Name)
 
-	// TODO(user): fill in your validation logic upon object creation.
+	if allErrs := r.validate(); len(allErrs) != 0 {
+		return nil, apierrors.NewInvalid(GroupVersion.WithKind("Link").GroupKind(), r.Name, allErrs)
+	}
 	return nil, nil
 }
 
@@ -63,7 +119,20 @@ func (r *Link) ValidateCreate() (admission.Warnings, error) {
 func (r *Link) ValidateUpdate(old runtime.Object) (admission.Warnings, error) {
 	linklog.Info("validate update", "name", r.Name)
 
-	// TODO(user): fill in your validation logic upon object update.
+	oldObj, ok := old.(*Link)
+	if !ok {
+		return nil, apierrors.NewBadRequest(fmt.Sprintf("expected *Link but got a %T", old))
+	}
+
+	if !reflect.DeepEqual(r, oldObj) {
+		return nil, apierrors.NewInvalid(GroupVersion.WithKind("Link").GroupKind(), r.Name, field.ErrorList{
+			field.Invalid(field.NewPath("spec"), "", "spec could not be changed"),
+		})
+	}
+
+	if allErrs := r.validate(); len(allErrs) != 0 {
+		return nil, apierrors.NewInvalid(GroupVersion.WithKind("Link").GroupKind(), r.Name, allErrs)
+	}
 	return nil, nil
 }
 

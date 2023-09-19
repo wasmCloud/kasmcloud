@@ -25,9 +25,13 @@ import (
 
 // ActorSpec defines the desired state of Actor
 type ActorSpec struct {
-	Host     string `json:"host"`
-	Image    string `json:"image"`
-	Replicas uint   `json:"replicas"`
+	// +kubebuilder:validation:MinLength:=1
+	Host string `json:"host"`
+
+	// +kubebuilder:validation:MinLength:=1
+	Image string `json:"image"`
+
+	Replicas uint `json:"replicas"`
 }
 
 // ActorStatus defines the observed state of Actor

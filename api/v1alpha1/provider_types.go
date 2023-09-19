@@ -25,9 +25,14 @@ import (
 
 // ProviderSpec defines the desired state of Provider
 type ProviderSpec struct {
-	Host  string `json:"host"`
+	// +kubebuilder:validation:MinLength:=1
+	Host string `json:"host"`
+
+	// +kubebuilder:validation:MinLength:=1
 	Image string `json:"image"`
-	Link  string `json:"link"`
+
+	// +kubebuilder:validation:MinLength:=1
+	Link string `json:"link"`
 }
 
 // ProviderStatus defines the observed state of Provider

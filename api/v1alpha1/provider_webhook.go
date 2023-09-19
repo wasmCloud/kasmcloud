@@ -17,7 +17,11 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"fmt"
+
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
@@ -43,7 +47,24 @@ var _ webhook.Defaulter = &Provider{}
 func (r *Provider) Default() {
 	providerlog.Info("default", "name", r.Name)
 
-	// TODO(user): fill in your defaulting logic.
+	if r.Labels == nil {
+		r.Labels = make(map[string]string)
+	}
+
+	r.Labels["host"] = r.Spec.Host
+	r.Labels["link"] = r.Spec.Link
+
+	if r.Status.PublicKey != "" {
+		r.Labels["publickey"] = r.Status.PublicKey
+	} else {
+		delete(r.Labels, "publickey")
+	}
+
+	if r.Status.DescriptiveName != "" {
+		r.Labels["desc"] = r.Status.DescriptiveName
+	} else {
+		delete(r.Labels, "desc")
+	}
 }
 
 // TODO(user): change verbs to "verbs=create;update;delete" if you want to enable deletion validation.
@@ -55,7 +76,6 @@ var _ webhook.Validator = &Provider{}
 func (r *Provider) ValidateCreate() (admission.Warnings, error) {
 	providerlog.Info("validate create", "name", r.Name)
 
-	// TODO(user): fill in your validation logic upon object creation.
 	return nil, nil
 }
 
@@ -63,7 +83,32 @@ func (r *Provider) ValidateCreate() (admission.Warnings, error) {
 func (r *Provider) ValidateUpdate(old runtime.Object) (admission.Warnings, error) {
 	providerlog.Info("validate update", "name", r.Name)
 
-	// TODO(user): fill in your validation logic upon object update.
+	oldObj, ok := old.(*Provider)
+	if !ok {
+		return nil, apierrors.NewBadRequest(fmt.Sprintf("expected *Provider but got a %T", old))
+	}
+
+	var allErrs field.ErrorList
+
+	if r.Spec.Host != oldObj.Spec.Host {
+		allErrs = append(allErrs, field.Invalid(
+			field.NewPath("spec", "host"),
+			r.Spec.Host,
+			"spec.host could not be changed",
+		))
+	}
+
+	if r.Spec.Link != oldObj.Spec.Link {
+		allErrs = append(allErrs, field.Invalid(
+			field.NewPath("spec", "link"),
+			r.Spec.Link,
+			"spec.link could not be changed",
+		))
+	}
+
+	if len(allErrs) != 0 {
+		return nil, apierrors.NewInvalid(GroupVersion.WithKind("Provider").GroupKind(), r.Name, allErrs)
+	}
 	return nil, nil
 }
 
