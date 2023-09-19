@@ -9,7 +9,8 @@ use kube::CustomResource;
     version = "v1alpha1",
     kind = "Actor",
     namespaced,
-    status = "ActorStatus"
+    status = "ActorStatus",
+    scale = r#"{"specReplicasPath":".spec.replicas", "statusReplicasPath":".status.replicas"}"#
 )]
 #[kube(category = "kasmcloud")]
 #[serde(rename_all = "camelCase")]
@@ -34,5 +35,6 @@ pub struct ActorStatus {
     pub reversion: Option<i32>,
 
     pub conditions: Vec<k8s_openapi::apimachinery::pkg::apis::meta::v1::Condition>,
+    pub replicas: i32,
     pub available_replicas: i32,
 }

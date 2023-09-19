@@ -44,12 +44,14 @@ type ActorStatus struct {
 	Reversion *int    `json:"reversion,omitempty"`
 
 	Conditions        []metav1.Condition `json:"conditions"`
+	Replicas          uint               `json:"replicas"`
 	AvailableReplicas uint               `json:"availableReplicas"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:path=actors,scope=Namespaced,categories=kasmcloud
 // +kubebuilder:subresource:status
+// +kubebuilder:subresource:scale:specpath=.spec.replicas,statuspath=.status.replicas
 // +kubebuilder:printcolumn:name="Desc",type="string",JSONPath=".status.descriptiveName"
 // +kubebuilder:printcolumn:name="PublicKey",type="string",JSONPath=".status.publicKey"
 // +kubebuilder:printcolumn:name="Replicas",type="integer",JSONPath=".spec.replicas"

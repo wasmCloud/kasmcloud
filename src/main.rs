@@ -277,6 +277,7 @@ async fn reconcile_actor(actor: Arc<v1alpha1::Actor>, ctx: Arc<Ctx>) -> Result<A
                 version: None,
                 reversion: None,
                 conditions: Vec::new(),
+                replicas: actor.spec.replicas,
                 available_replicas: actor.spec.replicas,
             };
             if let Some(meta) = claims.metadata {
