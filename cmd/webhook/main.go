@@ -51,18 +51,22 @@ func init() {
 func main() {
 	var metricsAddr string
 	var probeAddr string
+	var options webhook.Options
+
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
-	opts := zap.Options{
+	flag.IntVar(&options.Port, "port", webhook.DefaultPort, "The webhook Server port")
+	flag.StringVar(&options.CertDir, "cert-dir", "/tmp/k8s-webhook-server/serving-certs/", "The webhook cert dir")
+
+	logOpts := zap.Options{
 		Development: true,
 	}
-	opts.BindFlags(flag.CommandLine)
+	logOpts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
-	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&logOpts)))
 
-	webhookServer := webhook.NewServer(webhook.Options{})
-
+	webhookServer := webhook.NewServer(options)
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
 		MetricsBindAddress:     metricsAddr,
