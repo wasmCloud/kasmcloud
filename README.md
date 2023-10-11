@@ -19,13 +19,13 @@ With each tag, it works fine, but there may be incompatible changes between tags
 1. Deploy Nats
 ```bash
 $ helm repo add nats https://nats-io.github.io/k8s/helm/charts/
-$ helm update
-$ helm helm install kasmcloud-nats nats/nats
+$ helm repo update
+$ helm upgrade --install kasmcloud-nats nats/nats
 ```
 
 2. Deploy KasmCloud
 ```bash
-$ kubectl -f ./deploy
+$ kubectl apply -f ./deploy
 ```
 
 3. Deploy Actor, Link and Provider
