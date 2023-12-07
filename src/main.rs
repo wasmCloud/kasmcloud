@@ -9,6 +9,7 @@ use chrono::{DateTime, LocalResult, TimeZone, Utc};
 use clap::Parser;
 use config::{Config, Environment, File};
 use futures::{future::ready, join, StreamExt};
+use kube::error::{Error as KubeError, ErrorResponse};
 use nkeys::KeyPair;
 use serde_derive::Deserialize;
 use thiserror::Error;
@@ -21,7 +22,7 @@ use kube::api::{Patch, PatchParams};
 use kube::runtime::controller::Action;
 use kube::runtime::watcher::Config as WatchConfig;
 use kube::runtime::{finalizer, Controller};
-use kube::{Api, Client, ResourceExt};
+use kube::{api::PostParams, Api, Client, ResourceExt};
 use wasmcloud_control_interface::LinkDefinition;
 use wasmcloud_core::logging::Level as WasmcloudLogLevel;
 use wasmcloud_core::OtelConfig;
@@ -29,6 +30,10 @@ use wasmcloud_tracing::configure_tracing;
 
 use kasmcloud_apis::v1alpha1;
 use kasmcloud_host::*;
+
+lazy_static::lazy_static! {
+    static ref KUBERNETES_NODE_NAME: String = std::env::var("KUBERNETES_NODE_NAME").unwrap();
+}
 
 #[derive(Debug, Parser)]
 #[allow(clippy::struct_excessive_bools)]
@@ -40,15 +45,19 @@ struct Args {
 
 #[derive(Debug, Default, Deserialize)]
 struct KasmCloudConfig {
+    temporary: bool,
+    host_name: Option<String>,
+
     nats_host: String,
     nats_port: u16,
     nats_jwt: Option<String>,
     nats_seed: Option<String>,
+    js_domain: Option<String>,
+
     // lattice_prefix: String,
     host_seed: Option<String>,
     cluster_seed: Option<String>,
     cluster_issuers: Option<Vec<String>>,
-    js_domain: Option<String>,
 
     log_level: String,
     enable_structured_logging: bool,
@@ -56,8 +65,21 @@ struct KasmCloudConfig {
     otel_exporter_otlp_endpoint: Option<String>,
 }
 
+impl KasmCloudConfig {
+    fn get_hostname(self: &KasmCloudConfig) -> anyhow::Result<String> {
+        if let Some(host_name) = &self.host_name {
+            Ok(host_name.clone())
+        } else if !self.temporary {
+            Err(anyhow::Error::msg("require host name"))
+        } else {
+            let mut generator = names::Generator::default();
+            generator.next().context("generated failed")
+        }
+    }
+}
+
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> anyhow::Result<()> {
     let args: Args = Args::parse();
 
     let mut builder = Config::builder()
@@ -65,11 +87,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .set_default("nats_port", "4222")?
         .set_default("log_level", "info")?
         .set_default("enable_structured_logging", false)?
+        .set_default("temporary", false)?
         .add_source(Environment::with_prefix("kasmcloud"));
     if Path::new(&args.config).exists() {
         builder = builder.add_source(File::with_name(&args.config))
     }
     let config: KasmCloudConfig = builder.build()?.try_deserialize()?;
+
+    let hostname = config.get_hostname()?;
 
     let otel_config = OtelConfig {
         traces_exporter: config.otel_traces_exporter,
@@ -122,7 +147,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let namespace = "default".to_string();
-    let config = HostConfig {
+    let host_config = HostConfig {
         rpc_config,
         prov_rpc_config,
         js_domain: config.js_domain,
@@ -136,16 +161,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         log_level: Some(log_level),
         allow_file_load: true,
     };
-    let host = Host::new(config)
+    let host = Host::new(hostname.clone(), host_config)
         .await
         .context("failed new actor handler")?;
 
     let client = Client::try_default().await?;
+
+    let kasmcloud_host = serde_json::from_value(serde_json::json!({
+        "metadata": {
+            "name": hostname,
+        },
+        "spec": {}
+    }))?;
+    let host_client: Api<v1alpha1::KasmCloudHost> = Api::namespaced(client.clone(), &namespace);
+    if let Err(error) = host_client
+        .create(&PostParams::default(), &kasmcloud_host)
+        .await
+    {
+        if let KubeError::Api(ErrorResponse { reason, .. }) = &error {
+            if reason != "AlreadyExists" {
+                return Err(anyhow::anyhow!(
+                    "failed to create KasmCloudHost: {:?}",
+                    error
+                ));
+            }
+        } else {
+            return Err(anyhow::anyhow!("failed to create KasmCloudHost: {}", error));
+        }
+    }
+    update_host_status(&host_client, &host).await?;
+
     let actors: Api<v1alpha1::Actor> = Api::namespaced(client.clone(), &namespace);
     let providers: Api<v1alpha1::Provider> = Api::namespaced(client.clone(), &namespace);
     let links: Api<v1alpha1::Link> = Api::namespaced(client.clone(), &namespace);
 
     let ctx = Arc::new(Ctx {
+        host_client,
         actor_client: actors.clone(),
         provider_client: providers.clone(),
         link_client: links.clone(),
@@ -173,12 +224,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let actors = Controller::new(actors, WatchConfig::default())
         .run(
             |actor, ctx| async move {
+                if actor.spec.host != ctx.host.name {
+                    return Ok(Action::await_change());
+                }
+
                 let actors = ctx.actor_client.clone();
                 finalizer::finalizer(&actors, "kasmcloud-host/cleanup", actor, |event| async {
-                    match event {
-                        finalizer::Event::Apply(actor) => reconcile_actor(actor, ctx).await,
-                        finalizer::Event::Cleanup(actor) => delete_actor(actor, ctx).await,
-                    }
+                    let result = match event {
+                        finalizer::Event::Apply(actor) => reconcile_actor(actor, ctx.clone()).await,
+                        finalizer::Event::Cleanup(actor) => delete_actor(actor, ctx.clone()).await,
+                    };
+                    if let Err(_) = update_host_status(&ctx.host_client, &ctx.host).await {}
+                    result
                 })
                 .await
             },
@@ -189,14 +246,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let providers = Controller::new(providers, WatchConfig::default())
         .run(
-            |actor, ctx| async move {
+            |product, ctx| async move {
+                if product.spec.host != ctx.host.name {
+                    return Ok(Action::await_change());
+                }
+
                 let providers = ctx.provider_client.clone();
-                finalizer::finalizer(&providers, "kasmcloud-host/cleanup", actor, |event| async {
-                    match event {
-                        finalizer::Event::Apply(actor) => reconcile_provider(actor, ctx).await,
-                        finalizer::Event::Cleanup(actor) => delete_provider(actor, ctx).await,
-                    }
-                })
+                finalizer::finalizer(
+                    &providers,
+                    "kasmcloud-host/cleanup",
+                    product,
+                    |event| async {
+                        match event {
+                            finalizer::Event::Apply(product) => {
+                                reconcile_provider(product, ctx).await
+                            }
+                            finalizer::Event::Cleanup(product) => {
+                                delete_provider(product, ctx).await
+                            }
+                        }
+                    },
+                )
                 .await
             },
             |_obj, _err, _| Action::requeue(Duration::from_secs(2)),
@@ -209,11 +279,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[instrument(skip(host_client, host))]
+async fn update_host_status(
+    host_client: &Api<v1alpha1::KasmCloudHost>,
+    host: &Host,
+) -> anyhow::Result<()> {
+    let host_stats = host.stats().await;
+    let status = v1alpha1::KasmCloudHostStatus {
+        kube_node_name: KUBERNETES_NODE_NAME.clone(),
+        public_key: host.host_key.public_key(),
+        cluster_public_key: host.cluster_key.public_key(),
+        providers: v1alpha1::HostProviderStatus {
+            count: host_stats.provider_count,
+        },
+        actors: v1alpha1::HostActorStatus {
+            count: host_stats.actor_count,
+            instance_count: host_stats.actor_instance_count,
+        },
+        cluster_issuers: host.cluster_issuers.clone(),
+        instance: String::default(),
+        pre_instance: String::default(),
+    };
+    let data = serde_json::json!({ "status": status });
+    host_client
+        .patch_status(&host.name, &PatchParams::default(), &Patch::Merge(&data))
+        .await?;
+    Ok(())
+}
+
 // TODO(Iceber): add reflector store
 struct Ctx {
     actor_client: Api<v1alpha1::Actor>,
     provider_client: Api<v1alpha1::Provider>,
     link_client: Api<v1alpha1::Link>,
+    host_client: Api<v1alpha1::KasmCloudHost>,
     host: Host,
 
     links: RwLock<HashMap<String, (LinkDefinition, HashSet<String>)>>,
