@@ -93,12 +93,18 @@ pub struct HostConfig {
     pub log_level: Option<wasmcloud_core::logging::Level>,
 }
 
+pub struct HostStats {
+    pub provider_count: u64,
+    pub actor_count: u64,
+    pub actor_instance_count: u64,
+}
+
 pub struct Host {
-    name: String,
-    host_key: Arc<KeyPair>,
-    lattice_prefix: String,
-    cluster_key: Arc<KeyPair>,
-    cluster_issuers: Vec<String>,
+    pub name: String,
+    pub host_key: Arc<KeyPair>,
+    pub lattice_prefix: String,
+    pub cluster_key: Arc<KeyPair>,
+    pub cluster_issuers: Vec<String>,
 
     config: HostConfig,
     runtime: Runtime,
@@ -123,7 +129,7 @@ pub struct Host {
 }
 
 impl Host {
-    pub async fn new(config: HostConfig) -> anyhow::Result<Self> {
+    pub async fn new(name: String, config: HostConfig) -> anyhow::Result<Self> {
         let cluster_key = if let Some(cluster_key) = &config.cluster_key {
             ensure!(cluster_key.key_pair_type() == KeyPairType::Cluster);
             Arc::clone(cluster_key)
@@ -189,7 +195,7 @@ impl Host {
         );
 
         Ok(Host {
-            name: "kasmcloud-local".to_string(),
+            name,
             host_key,
             cluster_key,
             cluster_issuers,
@@ -208,6 +214,23 @@ impl Host {
             aliases: Arc::default(),
             registry_settings: RwLock::new(HashMap::new()),
         })
+    }
+
+    pub async fn stats(&self) -> HostStats {
+        let actors = self.actors.read().await;
+        let actor_count = actors.len();
+        let mut instance_count: usize = 0;
+        for (_, group) in &*actors {
+            for (_, actor) in &*group.actors.read().await {
+                instance_count += actor.instances.read().await.len();
+            }
+        }
+
+        HostStats {
+            actor_count: actor_count as u64,
+            actor_instance_count: instance_count as u64,
+            provider_count: self.providers.read().await.len() as u64,
+        }
     }
 
     #[instrument(skip_all)]
