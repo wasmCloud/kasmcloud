@@ -124,7 +124,7 @@ func (r *Link) ValidateUpdate(old runtime.Object) (admission.Warnings, error) {
 		return nil, apierrors.NewBadRequest(fmt.Sprintf("expected *Link but got a %T", old))
 	}
 
-	if !reflect.DeepEqual(r, oldObj) {
+	if !reflect.DeepEqual(r.Spec, oldObj.Spec) {
 		return nil, apierrors.NewInvalid(GroupVersion.WithKind("Link").GroupKind(), r.Name, field.ErrorList{
 			field.Invalid(field.NewPath("spec"), "", "spec could not be changed"),
 		})
