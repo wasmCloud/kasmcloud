@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  labels:
+    app: kasmcloud-host
+  name: kasmcloud-host
+spec:
+  selector:
+    matchLabels:
+      app: kasmcloud-host
+      kasmcloud-host/type: domain
+  template:
+    metadata:
+      labels:
+        app: kasmcloud-host
+        kasmcloud-host/type: domain
+    spec:
+      containers:
+      - command:
+        - "/usr/local/bin/kasmcloud"
+        image: ghcr.io/iceber/kasmcloud/host:v0.0.2
+        name: host
+        env:
+        - name: KASMCLOUD_HOST_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: KASMCLOUD_NATS_HOST
+          value: "kasmcloud-nats.default"
+        - name: KASMCLOUD_NATS_PORT
+          value: "4222"
+        - name: KUBERNETES_NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+      serviceAccountName: kasmcloud-host

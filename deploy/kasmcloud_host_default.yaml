@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    app: kasmcloud-host
+  name: kasmcloud-host-default
+spec:
+  containers:
+  - command:
+    - "/usr/local/bin/kasmcloud"
+    image: ghcr.io/iceber/kasmcloud/host:v0.0.2
+    name: host
+    env:
+    - name: KASMCLOUD_HOST_NAME
+      value: "default"
+    - name: KASMCLOUD_NATS_HOST
+      value: "kasmcloud-nats.default"
+    - name: KASMCLOUD_NATS_PORT
+      value: "4222"
+    - name: KUBERNETES_NODE_NAME
+      valueFrom:
+        fieldRef:
+          fieldPath: spec.nodeName
+  serviceAccountName: kasmcloud-host
