@@ -20,5 +20,9 @@ roleRef:
   name: kasmcloud-host
 subjects:
 - kind: ServiceAccount
-  name: default
+  name: kasmcloud-host
 ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kasmcloud-host
