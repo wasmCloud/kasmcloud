@@ -15,7 +15,7 @@ With each tag, it works fine, but there may be incompatible changes between tags
 
 <div align="center"><img src="./arch.png" style="width:500px;" /></div>
 
-## Sample
+## Quick Start
 1. **Deploy Nats**
 ```console
 helm repo add nats https://nats-io.github.io/k8s/helm/charts/
